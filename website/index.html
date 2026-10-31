@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Runbox — Run in a box. 单容器、多身份的 Agent 执行沙箱</title>
+    <meta
+      name="description"
+      content="Runbox 是给 Agent 执行命令、处理文件的轻量沙箱。一个容器承载多个身份，每个身份拥有独立 UID、私有工作区和持久安装环境。"
+    />
+    <meta name="theme-color" content="#0b1220" />
+    <meta property="og:title" content="Runbox — Run in a box." />
+    <meta
+      property="og:description"
+      content="单容器、多身份的 Agent 执行与文件后端。一个二进制、一个容器、一个卷。"
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://runbox.xyun.dev/" />
+    <meta property="og:image" content="https://runbox.xyun.dev/assets/banner.svg" />
+    <link rel="canonical" href="https://runbox.xyun.dev/" />
+    <link rel="icon" href="/assets/logo.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header class="nav">
+      <a class="brand" href="#top" aria-label="Runbox 首页">
+        <img src="/assets/logo.svg" alt="" width="34" height="34" />
+        <span>Runbox</span>
+      </a>
+      <nav class="nav-links" id="nav-links">
+        <a href="#why">为什么</a>
+        <a href="#features">能力</a>
+        <a href="#start">快速开始</a>
+        <a href="#sdks">SDK</a>
+        <a href="#faq">FAQ</a>
+        <a class="nav-github" href="https://github.com/xy200303/runbox">GitHub</a>
+      </nav>
+      <button class="nav-toggle" id="nav-toggle" aria-label="打开菜单" aria-expanded="false">
+        <span></span><span></span>
+      </button>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="hero-copy">
+          <span class="pill">v0.1.0 · MIT · 单容器多身份</span>
+          <h1>Run in a box.</h1>
+          <p class="hero-lead">一个容器，装下 Agent 的命令与文件。</p>
+          <p class="hero-body">
+            Runbox 给每个身份一个独立的 Linux 工作区：上传输入、执行 Python / Node / Shell、取回产物。
+            多个身份共享一个长期运行的容器，各自拥有 UID、私有目录、配额和持久安装环境。
+          </p>
+          <div class="actions">
+            <a class="button primary" href="#start">快速开始</a>
+            <a class="button ghost" href="https://github.com/xy200303/runbox">查看源码</a>
+          </div>
+          <p class="hero-note">不需要为每个用户新建容器，也不需要外部数据库或编排器。</p>
+        </div>
+
+        <div class="hero-card" aria-label="Runbox 请求示例">
+          <div class="card-bar">
+            <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+            <span class="card-title">runbox / terminal</span>
+          </div>
+          <pre class="terminal"><code><span class="prompt">$</span> docker compose up -d --build
+<span class="prompt">$</span> curl -fsS http://localhost:8099/v1/exec \
+    -H "Authorization: Bearer $RUNBOX_API_KEY" \
+    -H "X-Runbox-Identity: alice" \
+    -H "Content-Type: application/json" \
+    -d '{"command":"echo hello from runbox"}'
+
+<span class="json">{"exit_code":0,"stdout":"hello from runbox\n","files":[]}</span>
+
+<span class="prompt">$</span> find $HOME -maxdepth 2 -type d
+/workspace/workspaces/&lt;alice-key&gt;
+/workspace/workspaces/&lt;alice-key&gt;/files
+/workspace/workspaces/&lt;alice-key&gt;/out
+/workspace/workspaces/&lt;alice-key&gt;/.local</code></pre>
+        </div>
+      </section>
+
+      <section class="stats" aria-label="关键指标">
+        <div><strong>1</strong><span>个二进制</span></div>
+        <div><strong>1</strong><span>个容器</span></div>
+        <div><strong>1</strong><span>个卷</span></div>
+        <div><strong>多身份</strong><span>共享一个盒子</span></div>
+      </section>
+
+      <section id="why" class="section">
+        <div class="section-head">
+          <span class="eyebrow">01 / 为什么是 Runbox</span>
+          <h2>不是每个用户一个容器，<br />是每个容器很多身份。</h2>
+          <p>
+            container-per-sandbox 和 microVM 都为每个沙箱准备独立运行时。面对互相敌对的租户这是正确的取舍，
+            但在单机上意味着每个用户多一个容器或虚拟机，往往还多一份 Python / LibreOffice。
+          </p>
+        </div>
+        <div class="compare-wrap">
+          <table class="compare">
+            <thead>
+              <tr>
+                <th></th>
+                <th>每个沙箱一个容器</th>
+                <th>每个沙箱一台 microVM</th>
+                <th class="accent-col">Runbox</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>隔离单位</td><td>容器</td><td>虚拟机</td><td class="accent-col">单容器内 UID + 私有工作区</td></tr>
+              <tr><td>每个身份新建运行时</td><td>是</td><td>是</td><td class="accent-col">否</td></tr>
+              <tr><td>单机部署</td><td>控制面 + 多个容器</td><td>KVM + 运行时 + 镜像</td><td class="accent-col">一个二进制、一个容器、一个卷</td></tr>
+              <tr><td>文件隔离</td><td>依赖卷或 API</td><td>强</td><td class="accent-col">内置：工作区、配额、归档</td></tr>
+              <tr><td>适合</td><td>多机、强隔离</td><td>敌对租户</td><td class="accent-col">内部或半可信、单机</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="callout">
+          共享内核不是 microVM 边界。面对互相敌对的租户，请把 Runbox 放到 gVisor 或 microVM 下运行。
+        </p>
+      </section>
+
+      <section id="features" class="section alt">
+        <div class="section-head">
+          <span class="eyebrow">02 / 能力</span>
+          <h2>轻量，但文件、配额和执行边界都是真的。</h2>
+        </div>
+        <div class="grid features">
+          <article class="feature">
+            <span class="feature-no">01</span>
+            <h3>单容器，多身份</h3>
+            <p>HTTP runner 与执行环境共处一个长期运行的容器。每个身份用自己的 UID；同一身份串行，不同身份并发。</p>
+          </article>
+          <article class="feature">
+            <span class="feature-no">02</span>
+            <h3>按身份隔离文件</h3>
+            <p>私有工作区、工作区配额、可写目录之外的归档。符号链接不能用来读取或带出 runner 的文件。</p>
+          </article>
+          <article class="feature">
+            <span class="feature-no">03</span>
+            <h3>持久安装环境</h3>
+            <p>HOME、XDG、pip 和 npm 前缀都在工作区里。装过的包和中间文件跨调用保留，计入配额。</p>
+          </article>
+          <article class="feature">
+            <span class="feature-no">04</span>
+            <h3>大文件流式传输</h3>
+            <p>上传边读边落盘，不把整个请求体读进内存；下载支持 Range 和 HEAD，适合大产物。</p>
+          </article>
+          <article class="feature">
+            <span class="feature-no">05</span>
+            <h3>批量与路径下载</h3>
+            <p>批量上传多个文件；按相对路径下载任意中间文件，或把目录打成 tar 一次取回，不需要为每个文件生成 ID。</p>
+          </article>
+          <article class="feature">
+            <span class="feature-no">06</span>
+            <h3>有界执行</h3>
+            <p>命令长度、输入数量、stdout、产物数量与大小、工作区配额、归档配额、超时、并发和保留期都有边界。</p>
+          </article>
+          <article class="feature">
+            <span class="feature-no">07</span>
+            <h3>SQLite 身份状态</h3>
+            <p>身份、UID 和元数据写入一个 SQLite 文件，随数据卷持久化；不跟踪每个文件。</p>
+          </article>
+          <article class="feature">
+            <span class="feature-no">08</span>
+            <h3>默认 fail-closed</h3>
+            <p>只读根文件系统、丢弃能力、no-new-privileges、tini 作为 PID 1；缺少所需能力时拒绝启动。</p>
+          </article>
+          <article class="feature">
+            <span class="feature-no">09</span>
+            <h3>可观测</h3>
+            <p>/ready 就绪检查、/metrics Prometheus 指标、结构化文本或 JSON 请求日志。</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="how" class="section">
+        <div class="section-head">
+          <span class="eyebrow">03 / 工作机制</span>
+          <h2>路径是相对的，边界是内核给的。</h2>
+          <p>
+            每个请求带一个身份。runner 把命令 cwd 指向该身份的目录，在 exec 前切换 UID。
+            命令写 <code>out/report.csv</code> 时，落点由 cwd、HOME 和目录权限共同决定。
+          </p>
+        </div>
+        <div class="arch">
+          <div class="arch-node">
+            <span class="arch-label">调用方</span>
+            <strong>Agent / 应用</strong>
+            <small>Bearer + X-Runbox-*</small>
+          </div>
+          <span class="arch-arrow">→</span>
+          <div class="arch-node highlight">
+            <span class="arch-label">HTTP</span>
+            <strong>runboxd</strong>
+            <small>Gin · 身份校验 · 路径解析</small>
+          </div>
+          <span class="arch-arrow">→</span>
+          <div class="arch-node">
+            <span class="arch-label">执行</span>
+            <strong>/bin/sh</strong>
+            <small>UID 20000+n · 独立进程组</small>
+          </div>
+        </div>
+        <pre class="tree"><code>RUNBOX_ROOT/
+├── workspaces/&lt;identity-key&gt;/       0750，属主为该身份的 UID
+│   ├── files/                       上传的输入
+│   ├── out/                         执行产物
+│   ├── .local/  .npm-global/        持久的 pip / npm 安装
+│   ├── .cache/  .config/  .tmp/     持久的 XDG 状态与临时文件
+│   └── ...
+├── keep/&lt;identity-key&gt;/             不可变交付，属主为 runner
+└── state/
+    ├── runbox.db                    SQLite：身份、UID、元数据
+    ├── runbox.db-wal
+    └── runbox.db-shm</code></pre>
+      </section>
+
+      <section id="start" class="section alt">
+        <div class="section-head">
+          <span class="eyebrow">04 / 快速开始</span>
+          <h2>一个容器起来，剩下的交给 HTTP。</h2>
+        </div>
+        <div class="tabs">
+          <div class="tab-buttons" role="tablist" aria-label="快速开始示例">
+            <button class="tab active" data-tab="docker" role="tab">Docker</button>
+            <button class="tab" data-tab="curl" role="tab">cURL</button>
+            <button class="tab" data-tab="go" role="tab">Go</button>
+            <button class="tab" data-tab="python" role="tab">Python</button>
+            <button class="tab" data-tab="node" role="tab">Node</button>
+          </div>
+          <div class="tab-panel active" data-panel="docker">
+            <pre><code>git clone https://github.com/xy200303/runbox.git
+cd runbox
+cp .env.example .env
+# 写入足够长的 RUNBOX_API_KEY
+docker compose up -d --build
+curl -fsS http://localhost:8099/health</code></pre>
+          </div>
+          <div class="tab-panel" data-panel="curl">
+            <pre><code>curl -fsS http://localhost:8099/v1/exec \
+  -H "Authorization: Bearer $RUNBOX_API_KEY" \
+  -H "X-Runbox-Namespace: team-a" \
+  -H "X-Runbox-Principal: user-42" \
+  -H "Content-Type: application/json" \
+  -d '{"command":"mkdir -p out && echo hello > out/report.txt"}'</code></pre>
+            <p class="tab-note">产物返回 file_id；任意中间文件用 <code>GET /v1/path?path=...</code> 下载，目录用 <code>/v1/archive</code> 打包。</p>
+          </div>
+          <div class="tab-panel" data-panel="go">
+            <pre><code>go get github.com/xy200303/runbox/sdk/go</code></pre>
+            <pre><code>client, _ := sandbox.NewClient(sandbox.ClientOptions{
+    BaseURL:  "http://localhost:8099",
+    APIKey:   os.Getenv("RUNBOX_API_KEY"),
+    Identity: sandbox.ScopedIdentity("team-a", "user-42"),
+})
+result, _ := client.Run(ctx, sandbox.ExecRequest{
+    Command: "python3 -c 'print(6 * 7)'",
+})</code></pre>
+          </div>
+          <div class="tab-panel" data-panel="python">
+            <pre><code>pip install runbox-sdk</code></pre>
+            <pre><code>from runbox import Client, Identity
+
+client = Client(
+    "http://localhost:8099",
+    api_key="...",
+    identity=Identity(namespace="team-a", principal="user-42"),
+)
+print(client.exec("echo hello")["stdout"])</code></pre>
+          </div>
+          <div class="tab-panel" data-panel="node">
+            <pre><code>npm install runbox-sdk</code></pre>
+            <pre><code>import { Client } from 'runbox-sdk'
+
+const client = new Client({
+  baseUrl: 'http://localhost:8099',
+  apiKey: process.env.RUNBOX_API_KEY,
+  identity: { namespace: 'team-a', principal: 'user-42' },
+})
+console.log((await client.exec('echo hello')).stdout)</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <section id="sdks" class="section">
+        <div class="section-head">
+          <span class="eyebrow">05 / SDK</span>
+          <h2>按语言取用，接口保持同一套。</h2>
+        </div>
+        <div class="grid sdks">
+          <a class="sdk" href="https://github.com/xy200303/runbox/tree/main/sdk/go">
+            <span class="sdk-lang">Go</span>
+            <code>go get github.com/xy200303/runbox/sdk/go</code>
+            <p>标准库 HTTP 客户端，支持流式附件与 Backend 接口。</p>
+          </a>
+          <a class="sdk" href="https://github.com/xy200303/runbox/tree/main/sdk/python">
+            <span class="sdk-lang">Python</span>
+            <code>pip install runbox-sdk</code>
+            <p>仅标准库；从磁盘流式上传，下载流式落盘。</p>
+          </a>
+          <a class="sdk" href="https://github.com/xy200303/runbox/tree/main/sdk/node">
+            <span class="sdk-lang">Node</span>
+            <code>npm install runbox-sdk</code>
+            <p>TypeScript 类型、FormData 上传、归档与路径下载。</p>
+          </a>
+        </div>
+      </section>
+
+      <section id="deploy" class="section alt">
+        <div class="section-head">
+          <span class="eyebrow">06 / 部署</span>
+          <h2>单机优先，也允许把边界交给 gVisor。</h2>
+        </div>
+        <div class="grid two">
+          <article class="panel">
+            <h3>一个卷搞定持久化</h3>
+            <p>把数据根目录挂载为卷即可：<code>workspaces/</code>、<code>keep/</code> 和 <code>state/runbox.db</code> 都在里面。</p>
+            <pre><code>docker run -d --name runbox \
+  -p 8099:8099 \
+  -e RUNBOX_API_KEY=... \
+  -v runbox-data:/workspace \
+  ghcr.io/xy200303/runbox:latest</code></pre>
+          </article>
+          <article class="panel">
+            <h3>默认安全姿态</h3>
+            <p>只读根、丢弃全部能力后再补回所有权相关能力、no-new-privileges、资源上限。启动时缺少能力直接失败。</p>
+            <pre><code>cap_drop: [ALL]
+cap_add: [CHOWN, FOWNER, SETUID,
+          SETGID, DAC_OVERRIDE, KILL]
+security_opt:
+  - no-new-privileges:true</code></pre>
+          </article>
+        </div>
+      </section>
+
+      <section id="faq" class="section">
+        <div class="section-head">
+          <span class="eyebrow">07 / FAQ</span>
+          <h2>几个接入前最常问的问题。</h2>
+        </div>
+        <div class="faq">
+          <details>
+            <summary>每个用户都会新建容器吗？</summary>
+            <p>不会。所有身份共享一个长期运行的容器，每个身份在里面拥有一个 UID 和私有工作区。这正是它能单机部署的原因。</p>
+          </details>
+          <details>
+            <summary>中间文件怎么下载？必须为每个文件生成 ID 吗？</summary>
+            <p>不需要。任意文件都可以通过相对路径下载，例如 <code>GET /v1/path?path=tmp/step2/data.csv</code>；目录用 <code>GET /v1/archive?path=out</code> 打成 tar。file ID 只用于上传文件和执行产物。</p>
+          </details>
+          <details>
+            <summary>可以执行 apt-get 吗？</summary>
+            <p>不能。身份不是 root，根文件系统只读。系统级依赖应该在镜像构建时预装；pip/npm 安装落在各自工作区。</p>
+          </details>
+          <details>
+            <summary>可以执行不受信任的代码吗？</summary>
+            <p>不能把它当作强多租户边界。Runbox 使用容器 namespace/cgroup 与按 UID 的文件权限，内核是共享的。面对敌对租户，请放到 gVisor 或 microVM 下运行。</p>
+          </details>
+          <details>
+            <summary>和 dify-sandbox 有什么区别？</summary>
+            <p>形态相近：一个容器，每次执行切 UID。区别是 Runbox 的身份和 UID 持久化，工作区跨调用保留，文件可以按路径或归档下载，面向独立应用而不是 Dify 内部代码节点。</p>
+          </details>
+          <details>
+            <summary>数据怎么备份？</summary>
+            <p>备份 <code>workspaces/</code>（如果中间状态重要）、<code>keep/</code> 和 <code>state/runbox.db</code>。SQLite 在 WAL 模式，建议停容器或用 SQLite 备份接口复制。</p>
+          </details>
+        </div>
+      </section>
+
+      <section class="cta">
+        <div>
+          <span class="eyebrow">Run in a box.</span>
+          <h2>一个盒子，装下命令和文件。</h2>
+          <p>从 Docker 或 SDK 开始，十分钟内跑通第一条命令。</p>
+        </div>
+        <div class="actions">
+          <a class="button primary" href="#start">快速开始</a>
+          <a class="button ghost" href="https://github.com/xy200303/runbox">GitHub</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-brand">
+        <img src="/assets/logo.svg" alt="" width="28" height="28" />
+        <span>Runbox</span>
+      </div>
+      <div class="footer-links">
+        <a href="https://github.com/xy200303/runbox">GitHub</a>
+        <a href="https://github.com/xy200303/runbox/tree/main/docs">文档</a>
+        <a href="https://github.com/xy200303/runbox/blob/main/README.zh-CN.md">中文 README</a>
+        <a href="https://github.com/xy200303/runbox/blob/main/LICENSE">MIT</a>
+      </div>
+      <p class="footer-note">© 2026 Runbox contributors · Run in a box.</p>
+    </footer>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
