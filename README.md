@@ -339,6 +339,22 @@ Authentication is `Authorization: Bearer <RUNBOX_API_KEY>`. `/health` and `/read
 
 Full request and response reference: [docs/api.md](docs/api.md).
 
+## Batch download
+
+Download a directory or several paths as one tar stream:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer $RUNBOX_API_KEY" \
+  -H "X-Runbox-Identity: alice" \
+  "http://localhost:8099/v1/archive?path=out&path=tmp/step.txt" \
+  -o artifacts.tar
+```
+
+SDKs expose the same entry as `DownloadArchive` (Go), `download_archive`
+(Python) and `downloadArchive` (Node). No file IDs are involved; paths are
+relative to the caller's workspace.
+
 ## How it works
 
 ```mermaid

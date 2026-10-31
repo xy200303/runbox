@@ -332,6 +332,21 @@ await client.downloadArchive(['out'], 'artifacts.tar')
 
 完整请求/响应说明见 [docs/api.md](docs/api.md)。
 
+## 批量下载
+
+把一个目录或多个路径打成一个 tar 流下载：
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer $RUNBOX_API_KEY" \
+  -H "X-Runbox-Identity: alice" \
+  "http://localhost:8099/v1/archive?path=out&path=tmp/step.txt" \
+  -o artifacts.tar
+```
+
+SDK 对应 Go 的 `DownloadArchive`、Python 的 `download_archive`、Node 的
+`downloadArchive`。不需要 file ID，路径都相对于调用方的工作区。
+
 ## 工作机制
 
 ```mermaid
