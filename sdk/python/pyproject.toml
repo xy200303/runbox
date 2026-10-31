@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "runbox-sdk"
+version = "0.1.0"
+description = "Python client for Runbox, a lightweight sandbox for agent commands and files"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Runbox contributors" }]
+keywords = ["runbox", "sandbox", "agent", "code-execution"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://runbox.xyun.dev"
+Repository = "https://github.com/xy200303/runbox"
+Documentation = "https://github.com/xy200303/runbox/blob/main/docs/api.md"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+runbox = ["py.typed"]
