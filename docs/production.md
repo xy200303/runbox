@@ -189,6 +189,9 @@ recreate; after that they are cancelled and their process groups are killed.
 
 ## Commercial readiness checklist
 
+How to implement the volume quota and egress items is covered in
+[deployment.md](deployment.md#egress-and-disk-limits).
+
 - [ ] API key in a secret manager; gateway auth and TLS in front.
 - [ ] Capability set exactly as required; startup fails closed.
 - [ ] Read-only root, tmpfs, volume, memory/CPU/pids limits.

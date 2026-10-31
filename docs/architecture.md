@@ -13,6 +13,10 @@
 - Strong isolation between hostile tenants. That requires a stronger boundary
   (gVisor, microVM) or one container per tenant.
 - Distributed scheduling. One runner owns its local workspaces.
+- Shared storage or identity routing across replicas. A load balancer needs
+  sticky routing, which is the operator's job rather than a runner feature.
+- Filesystem-level disk quotas and per-command egress filtering. Both live at the
+  host or platform layer; the runner only enforces a soft pre-execution check.
 - Hosting the agent or running the model loop. Runbox executes the commands and
   stores the files the agent asks for; the agent itself runs elsewhere.
 

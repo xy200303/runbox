@@ -505,13 +505,14 @@ For development, yes. Production isolation is Linux-only, because per-identity U
 
 ## Roadmap
 
-- [ ] Egress policy hooks for commands that must not reach the internet
-- [ ] Shared storage or per-identity routing for multi-replica deployments
-- [ ] Optional hard disk quotas per identity
-- [ ] A maintained seccomp profile and a gVisor deployment recipe
-- [ ] Tenant admin API: namespace-level usage and quota
+- [ ] Read-only usage endpoint: per-namespace identity count, workspace bytes and in-flight commands
 - [x] SBOM and provenance attestations for published images
 - [ ] Signed container images with cosign/Sigstore
+
+Egress filtering, filesystem-level disk quotas, seccomp profiles and multi-replica
+routing are deployment decisions, not runner features. Runbox documents how to
+handle each one in [docs/deployment.md](docs/deployment.md) and
+[docs/production.md](docs/production.md) rather than building it into the daemon.
 
 ## Contributing
 

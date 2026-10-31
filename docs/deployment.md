@@ -214,9 +214,24 @@ spec:
 - The workspace PVC must be `ReadWriteOnce`; a runner is a single writer.
 - Multiple replicas need sticky routing per identity or one PVC per replica.
   There is no cross-replica workspace sharing.
-- Add a `NetworkPolicy` for egress if commands must not reach the internet.
-- Size ephemeral storage with a real quota; `RUNBOX_QUOTA_BYTES` is a soft
-  pre-check, not a filesystem limit.
+
+## Egress and disk limits
+
+Runbox executes commands as they are. It does not filter outbound traffic and
+does not impose filesystem quotas; both belong to the layer that owns the host.
+
+- **Egress.** On a single host, terminate it at the network layer: drop outbound
+  traffic from the container's bridge and allow only the package mirrors the
+  toolchains need, or force the container through a proxy with `HTTP_PROXY`,
+  `HTTPS_PROXY` and `NO_PROXY`. On Kubernetes use a `NetworkPolicy`.
+  Per-identity egress rules are not available: every identity shares one
+  network namespace, so the container is the unit of egress control.
+- **Disk.** Bind-mount a dedicated volume at `RUNBOX_ROOT` and size it for
+  `RUNBOX_QUOTA_BYTES * active identities`. `RUNBOX_QUOTA_BYTES` is a
+  pre-execution check that returns `409 quota_exceeded`; it never interrupts a
+  running command. For a hard limit, enable project quotas on the host
+  filesystem (for example `prjquota` on XFS) and assign each identity
+  subdirectory a project.
 
 ## Sizing
 
