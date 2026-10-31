@@ -26,6 +26,15 @@
     "agent",
     "code-execution"
   ],
+  "homepage": "https://runbox.xyun.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xy200303/runbox.git",
+    "directory": "sdk/node"
+  },
+  "bugs": {
+    "url": "https://github.com/xy200303/runbox/issues"
+  },
   "license": "MIT",
   "engines": {
     "node": ">=18"
