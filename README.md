@@ -259,7 +259,7 @@ RUNBOX_ROOT/
 
 - The command runs in its own process group as the identity's UID. A timeout kills the group, not the container.
 - Output is captured with a bounded head + tail buffer, so a command printing gigabytes cannot exhaust RAM.
-- Files created under `out/` during the call are returned as file IDs. Delivered files are copied into `keep/`, outside the writable workspace. `?purge=true` removes the archive with the workspace.
+- Files created under `out/` during the call are returned as file IDs that point into the workspace. `POST /v1/files/{id}/keep` copies one into `keep/`, outside the writable workspace, so later commands cannot change it. `?purge=true` removes the archive with the workspace.
 - A janitor removes workspaces idle longer than the retention window; `keep/` is untouched.
 - The API key is compared in constant time; identity values are validated, not sanitized — sanitizing would merge distinct identities onto one workspace.
 
