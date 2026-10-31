@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/xy200303/runbox/internal/store"
-	"github.com/xy200303/runbox/sandbox"
+	"github.com/xy200303/runbox/sdk/go"
 )
 
 // Options configures a Runner. Zero values are replaced with safe defaults,

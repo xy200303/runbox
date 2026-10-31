@@ -19,7 +19,7 @@ import (
 
 	"github.com/xy200303/runbox/internal/config"
 	"github.com/xy200303/runbox/internal/runner"
-	"github.com/xy200303/runbox/sandbox"
+	"github.com/xy200303/runbox/sdk/go"
 )
 
 // Server binds a runner and configuration to HTTP handlers.

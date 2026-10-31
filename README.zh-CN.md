@@ -137,7 +137,7 @@ import (
     "os"
     "time"
 
-    "github.com/xy200303/runbox/sandbox"
+    "github.com/xy200303/runbox/sdk/go"
 )
 
 client, err := sandbox.NewClient(sandbox.ClientOptions{

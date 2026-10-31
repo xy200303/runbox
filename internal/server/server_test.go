@@ -22,7 +22,7 @@ import (
 
 	"github.com/xy200303/runbox/internal/config"
 	"github.com/xy200303/runbox/internal/runner"
-	"github.com/xy200303/runbox/sandbox"
+	"github.com/xy200303/runbox/sdk/go"
 )
 
 func testConfig(t *testing.T) config.Config {

@@ -2,7 +2,7 @@
 
 Thanks for taking a look. This project is intentionally small. The public SDK
 is stdlib-only; the HTTP server uses Gin. Keep new dependencies out of
-`sandbox/` unless there is a strong reason.
+`sdk/go/` unless there is a strong reason.
 
 ## Development
 
@@ -25,14 +25,14 @@ That runs a gofmt check, `go vet ./...` and `go test -race ./...`.
 
 Security-sensitive paths have tests; please add one when you change:
 
-- `sandbox/fileid.go` — file-id parsing and path validation;
+- `sdk/go/fileid.go` — file-id parsing and path validation;
 - `internal/runner/paths.go` — symlink and traversal handling;
 - `internal/runner/exec.go` — environment, output caps, timeouts;
 - `internal/server/` — authentication, identity and body limits.
 
 ## Design constraints
 
-- The public SDK (`sandbox/`) must not import `internal/`.
+- The public SDK (`sdk/go/`) must not import `internal/`.
 - The runner must not depend on an application framework; HTTP is the only
   integration surface.
 - Never let a symlink escape the workspace when serving, archiving or

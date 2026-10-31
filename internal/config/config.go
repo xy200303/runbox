@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xy200303/runbox/sandbox"
+	"github.com/xy200303/runbox/sdk/go"
 )
 
 // Config is the resolved server configuration.

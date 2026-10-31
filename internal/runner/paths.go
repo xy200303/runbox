@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/xy200303/runbox/sandbox"
+	"github.com/xy200303/runbox/sdk/go"
 )
 
 // secureJoin resolves rel inside root and guarantees that the result — after

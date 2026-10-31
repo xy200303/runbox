@@ -49,7 +49,7 @@ contract.
 
 | Package | Role |
 |---|---|
-| `sandbox/` | Public SDK: wire types, file-id codec, validation, HTTP client. No `internal/` imports. |
+| `sdk/go/` | Public Go SDK: wire types, file-id codec, validation, HTTP client. No `internal/` imports. |
 | `internal/config/` | Environment parsing and validation. |
 | `internal/runner/` | Workspaces, UID allocation, execution, output collection, archive, janitor. |
 | `internal/server/` | Routing, auth, identity, body limits, streaming. |

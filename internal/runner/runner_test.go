@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xy200303/runbox/sandbox"
+	"github.com/xy200303/runbox/sdk/go"
 )
 
 func newTestRunner(t *testing.T, mutate func(*Options)) *Runner {

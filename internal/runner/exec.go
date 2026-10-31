@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/xy200303/runbox/sandbox"
+	"github.com/xy200303/runbox/sdk/go"
 )
 
 // Exec runs one command as the identity's UID and collects files written to

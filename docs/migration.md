@@ -73,7 +73,7 @@ Delete or stop importing `backend/internal/sandbox/http.go` and stop running
 import (
     "time"
 
-    "github.com/xy200303/runbox/sandbox"
+    "github.com/xy200303/runbox/sdk/go"
 )
 
 client, err := sandbox.NewClient(sandbox.ClientOptions{
