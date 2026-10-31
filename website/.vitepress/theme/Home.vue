@@ -36,6 +36,13 @@ const features = [
   }
 ]
 
+const proof = [
+  { value: '140', label: '攻击断言', note: '常规 78 · 深度 36 · 混淆 26' },
+  { value: '0', label: '越权 / 穿越成功', note: '无跨身份读写，无逃逸' },
+  { value: '8.5 ms', label: 'exec p50', note: 'p95 30.9 ms，max 33 ms' },
+  { value: '667 exec/s', label: '16 路并发', note: '超出并发上限立即 409' }
+]
+
 const quickstart = [
   {
     id: 'docker',
@@ -515,6 +522,32 @@ read_only: true</code></pre>
       </div>
     </section>
 
+    <!-- ============ 验证 ============ -->
+    <section class="section alt">
+      <div class="inner">
+        <header class="head">
+          <span class="eyebrow" v-reveal><i>08</i>验证</span>
+          <h2 class="display" v-reveal>攻击面用数字说话。</h2>
+          <p class="lead" v-reveal>
+            140 项攻击断言：认证、身份头、路径穿越、容器边界，加上深度隔离、命令混淆与脚本套娃。
+            每一套都配了可重跑的脚本，结果和限制一起写进报告。
+          </p>
+        </header>
+
+        <ul class="proof">
+          <li v-for="(item, i) in proof" :key="item.label" v-reveal="i * 60">
+            <strong class="tnum">{{ item.value }}</strong>
+            <span class="stat-label">{{ item.label }}</span>
+            <span class="stat-note">{{ item.note }}</span>
+          </li>
+        </ul>
+
+        <p class="more" v-reveal>
+          <a :href="withBase('/validation')">查看完整验证报告</a>
+        </p>
+      </div>
+    </section>
+
     <!-- ============ 收尾 ============ -->
     <section class="final">
       <div class="final-inner">
@@ -741,6 +774,39 @@ read_only: true</code></pre>
 }
 
 /* ---------- 数字条 ---------- */
+.proof {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 34px 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--rb-line);
+  border-bottom: 1px solid var(--rb-line);
+}
+.proof li {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 20px 18px 22px 0;
+  border-right: 1px solid var(--rb-line-soft);
+}
+.proof li:last-child {
+  border-right: 0;
+}
+.proof strong {
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.more {
+  margin: 18px 0 0;
+  font-size: 14px;
+}
+.more a {
+  color: var(--rb-emerald-600);
+  font-weight: 500;
+}
+
 .stats {
   max-width: var(--rb-container);
   margin: 56px auto 0;
@@ -1147,6 +1213,12 @@ table.compare {
 
 /* ---------- 响应式 ---------- */
 @media (max-width: 1024px) {
+  .proof {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .proof li:nth-child(2) {
+    border-right: 0;
+  }
   .hero-inner {
     grid-template-columns: 1fr;
     gap: 40px;
@@ -1187,6 +1259,17 @@ table.compare {
   .grid.sdks,
   .grid.two {
     grid-template-columns: 1fr;
+  }
+  .proof {
+    grid-template-columns: 1fr;
+  }
+  .proof li {
+    border-right: 0;
+    border-bottom: 1px solid var(--rb-line-soft);
+    padding: 14px 0;
+  }
+  .proof li:last-child {
+    border-bottom: 0;
   }
   .flow {
     flex-direction: column;

@@ -50,6 +50,7 @@ It is small on purpose: one Go binary, one container, one volume, and a single H
 | `website/` | Product site for [runbox.xyun.dev](https://runbox.xyun.dev). |
 | `docs/` | API, architecture, security, deployment, production and migration notes. |
 | `examples/` | Runnable Go, Python and curl walkthroughs. |
+| `validation/` | Adversarial and performance harnesses behind the [validation report](docs/validation.md). |
 | `.github/workflows/` | CI, container publishing, SDK releases and GitHub Pages. |
 
 ## Why Runbox?
@@ -515,6 +516,30 @@ More detail: [docs/architecture.md](docs/architecture.md).
 - Startup fails closed when running as root without the required capabilities. `RUNBOX_ALLOW_MISSING_CAPS=1` is a development-only override.
 
 > Runbox is not a strong multi-tenant boundary on its own. It relies on the container's namespaces/cgroups plus per-UID file permissions. For hostile tenants, run it under gVisor or a microVM. See [docs/security.md](docs/security.md).
+
+## Validation
+
+140 adversarial checks, no bypasses. The harnesses ship in
+[`validation/`](validation/) and can be re-run against any instance.
+
+| Suite | Checks | Covers |
+|---|---|---|
+| Security | 78 | auth, identity headers, cross-tenant reads, traversal and encoding, container escapes, limits |
+| Deep attacks | 36 | hardlinks, FIFOs, symlink races, `/proc`, kernel escapes, request smuggling, UID recycling |
+| Obfuscation and nesting | 26 | base64/hex/eval, three-level scripts, path splicing, dynamic `unshare`/`chroot` |
+
+Isolation is decided at `fork/exec`, not by inspecting command text, so encoding
+or nesting a payload does not change the outcome.
+
+| Metric | Result |
+|---|---|
+| `exec true` | p50 8.5 ms, p95 30.9 ms |
+| 16 identities in parallel | 667 exec/s |
+| Download 32 MB | 66 MiB/s |
+
+Full tables, the known boundaries and the reproduction steps:
+[docs/validation.md](docs/validation.md) and
+[runbox.xyun.dev/validation](https://runbox.xyun.dev/validation).
 
 ## Operations
 

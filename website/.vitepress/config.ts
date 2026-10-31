@@ -79,6 +79,7 @@ export default defineConfig({
     nav: [
       { text: '首页', link: '/' },
       { text: '文档', link: '/guide/quickstart' },
+      { text: '验证', link: '/validation' },
       { text: '接口', link: '/guide/api' },
       { text: '部署', link: '/guide/deploy' }
     ],
