@@ -12,7 +12,7 @@ Examples:
     python examples/python/runbox_client.py exec "echo hello"
     python examples/python/runbox_client.py upload ./data.csv
     python examples/python/runbox_client.py list out
-    python examples/python/runbox_client.py download <file_id> ./out.bin
+    python examples/python/runbox_client.py download out/hello.txt ./out.bin
 """
 
 from __future__ import annotations
@@ -136,14 +136,6 @@ class Runbox:
         ) as response:
             return json.load(response)
 
-    def download(self, file_id: str, destination: str) -> str:
-        quoted = urllib.parse.quote(file_id, safe="")
-        with self._request("GET", f"/v1/files/{quoted}") as response:
-            with open(destination, "wb") as handle:
-                while chunk := response.read(1 << 20):
-                    handle.write(chunk)
-            return _filename(response.headers.get("Content-Disposition", "")) or destination
-
     def open_path(self, path: str, destination: str) -> str:
         quoted = urllib.parse.quote(path, safe="")
         with self._request("GET", f"/v1/path?path={quoted}") as response:
@@ -193,7 +185,7 @@ def main() -> int:
     elif command == "upload":
         print(json.dumps(client.upload(rest[0]), indent=2))
     elif command == "download":
-        print(client.download(rest[0], rest[1]))
+        print(client.open_path(rest[0], rest[1]))
     elif command == "list":
         print(json.dumps(client.list(rest[0] if rest else ""), indent=2))
     else:

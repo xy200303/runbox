@@ -1,61 +1,10 @@
 package sandbox
 
 import (
-	"encoding/base64"
 	"path"
 	"strings"
 	"unicode/utf8"
 )
-
-const (
-	fileIDSeparator = "\x00"
-	fileIDVersion   = "1"
-)
-
-// EncodeFile turns a workspace-relative reference into an opaque, versioned
-// file id: "rbx_" plus base64url of (version, identity key, kind, path).
-func EncodeFile(key, kind, relPath string) string {
-	raw := strings.Join([]string{fileIDVersion, key, kind, relPath}, fileIDSeparator)
-	return FileIDPrefix + base64.RawURLEncoding.EncodeToString([]byte(raw))
-}
-
-// DecodeFile parses a file id. There is exactly one format; other prefixes
-// and field counts are rejected rather than translated.
-func DecodeFile(fileID string) (*FileRef, error) {
-	if !strings.HasPrefix(fileID, FileIDPrefix) {
-		return nil, BadRequest("invalid file id")
-	}
-	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(fileID, FileIDPrefix))
-	if err != nil {
-		return nil, BadRequest("invalid file id")
-	}
-	parts := strings.Split(string(raw), fileIDSeparator)
-	if len(parts) != 4 || parts[0] != fileIDVersion {
-		return nil, BadRequest("invalid file id")
-	}
-	ref := &FileRef{Key: parts[1], Kind: parts[2], Path: parts[3]}
-	if !ValidKey(ref.Key) {
-		return nil, BadRequest("invalid file id")
-	}
-	if !validKind(ref.Kind) {
-		return nil, BadRequest("invalid file kind")
-	}
-	clean, err := NormalizeRel(ref.Path)
-	if err != nil {
-		return nil, err
-	}
-	ref.Path = clean
-	return ref, nil
-}
-
-func validKind(kind string) bool {
-	switch kind {
-	case KindFiles, KindOut:
-		return true
-	default:
-		return false
-	}
-}
 
 // ValidIdentity reports whether s can be used as an identity.
 // It is deliberately strict: sanitising identity values silently maps

@@ -27,14 +27,8 @@ result=$(curl -fsS "${auth[@]}" \
   "${RUNBOX_URL}/v1/exec")
 echo "${result}"
 
-file_id=$(printf '%s' "${result}" | sed -n 's/.*"file_id":"\([^"]*\)".*/\1/p' | head -n1)
-if [ -z "${file_id}" ]; then
-  echo "no output file returned" >&2
-  exit 1
-fi
-
-echo "== download ${file_id}"
-curl -fsS "${auth[@]}" -o hello.txt "${RUNBOX_URL}/v1/files/${file_id}"
+echo "== download out/hello.txt by path"
+curl -fsS "${auth[@]}" -o hello.txt "${RUNBOX_URL}/v1/path?path=out/hello.txt"
 cat hello.txt
 
 echo "== list out/"

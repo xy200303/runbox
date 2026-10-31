@@ -57,7 +57,6 @@ func main() {
 		UIDMax:                   cfg.UIDMax,
 		MaxUploadBytes:           cfg.MaxUploadBytes,
 		MaxCommandBytes:          cfg.MaxCommandBytes,
-		MaxInputs:                cfg.MaxInputs,
 		MaxStdoutBytes:           cfg.MaxStdoutBytes,
 		MaxOutputFiles:           cfg.MaxOutputFiles,
 		MaxOutputBytes:           cfg.MaxOutputBytes,

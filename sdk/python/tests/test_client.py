@@ -38,8 +38,8 @@ class Handler(BaseHTTPRequestHandler):
                 200,
                 {
                     "files": [
-                        {"file_id": "rbx_a", "name": "a.txt", "size": 3},
-                        {"file_id": "rbx_b", "name": "b.txt", "size": 3},
+                        {"path": "files/a.txt", "name": "a.txt", "size": 3},
+                        {"path": "files/b.txt", "name": "b.txt", "size": 3},
                     ]
                 },
             )
@@ -123,7 +123,7 @@ class ClientTest(unittest.TestCase):
             uploaded = self.client.upload_batch(
                 [FileUpload("a.txt", path=first), FileUpload("b.txt", path=second)]
             )
-        self.assertEqual([item["file_id"] for item in uploaded], ["rbx_a", "rbx_b"])
+        self.assertEqual([item["path"] for item in uploaded], ["files/a.txt", "files/b.txt"])
         request = Handler.requests[0]
         self.assertIn(b"aaa", request["body"])
         self.assertIn(b"bbb", request["body"])

@@ -16,9 +16,6 @@ const (
 	// Version is the SDK version reported in the User-Agent header.
 	Version = "0.2.0"
 
-	// FileIDPrefix identifies Runbox file references.
-	FileIDPrefix = "rbx_"
-
 	// Kinds accepted in a file reference.
 	KindFiles = "files"
 	KindOut   = "out"
@@ -44,23 +41,16 @@ type Result struct {
 
 // Output is a file produced by a command and stored under out/.
 type Output struct {
-	Name   string `json:"name"`
-	FileID string `json:"file_id"`
-	Size   int64  `json:"size"`
-}
-
-// FileRef is a decoded file id.
-type FileRef struct {
-	Key  string
-	Kind string
-	Path string
+	Name string `json:"name"`
+	Path string `json:"path"`
+	Size int64  `json:"size"`
 }
 
 // UploadedFile is the response of a file upload.
 type UploadedFile struct {
-	FileID string `json:"file_id"`
-	Name   string `json:"name"`
-	Size   int64  `json:"size"`
+	Path string `json:"path"`
+	Name string `json:"name"`
+	Size int64  `json:"size"`
 }
 
 // FileUpload is one in-memory attachment sent with ExecRequest.
@@ -74,8 +64,6 @@ type FileUpload struct {
 type ExecRequest struct {
 	Command string
 	Timeout time.Duration
-	// Inputs are file ids returned by SaveFile or by an earlier execution.
-	Inputs []string
 	// Files are uploaded immediately before the command runs.
 	Files []FileUpload
 }
@@ -127,9 +115,8 @@ type Health struct {
 type Backend interface {
 	Enabled() bool
 	SaveFile(ctx context.Context, identity Identity, name string, reader io.Reader, size int64) (string, error)
-	OpenFile(ctx context.Context, identity Identity, fileID string) (io.ReadCloser, string, error)
 	OpenPath(ctx context.Context, identity Identity, path string) (io.ReadCloser, string, error)
-	Exec(ctx context.Context, identity Identity, command string, inputs []string, timeout time.Duration) (*Result, error)
+	Exec(ctx context.Context, identity Identity, command string, timeout time.Duration) (*Result, error)
 	List(ctx context.Context, identity Identity, path string) ([]ListEntry, error)
 	DeleteWorkspace(ctx context.Context, identity Identity) error
 }

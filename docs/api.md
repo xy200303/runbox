@@ -41,16 +41,6 @@ X-Runbox-Principal: user-42
 Responses carry `X-Request-Id`. Include it when reporting a problem; the same ID
 appears in the runner log.
 
-## File IDs
-
-```text
-rbx_ + base64url(version, identity key, kind, path)
-```
-
-`version` is `1`, `identity key` is the canonical hash, and `kind` is `files`
-or `out`. A file ID is accepted only with the identity that owns it.
-There is no legacy format and no cross-identity file access.
-
 ## Errors
 
 All errors are JSON:
@@ -61,7 +51,7 @@ All errors are JSON:
 
 | Status | Code | Meaning |
 |---|---|---|
-| 400 | `bad_request` | Missing/invalid field, path, identity or file id. |
+| 400 | `bad_request` | Missing/invalid field, path or identity. |
 | 401 | `unauthorized` | Missing or invalid `Authorization: Bearer` token. |
 | 403 | `forbidden` | The file belongs to another workspace. |
 | 404 | `not_found` | File, directory or workspace entry does not exist. |
@@ -166,8 +156,7 @@ Content-Type: application/json
 
 {
   "command": "python3 analyze.py files/input.csv",
-  "timeout_seconds": 60,
-  "inputs": ["rbx_..."]
+  "timeout_seconds": 60
 }
 ```
 
@@ -175,9 +164,8 @@ Content-Type: application/json
   `RUNBOX_MAX_COMMAND_BYTES`.
 - `timeout_seconds` is optional; `0`/absent uses `RUNBOX_DEFAULT_TIMEOUT` and
   values above `RUNBOX_MAX_TIMEOUT` are clamped.
-- `inputs` are file IDs that must belong to the same identity. They are
-  validated for ownership; the files are already on disk. At most
-  `RUNBOX_MAX_INPUTS` inputs (including multipart `files`) are accepted.
+- Files are referenced by workspace-relative path, for example `files/input.csv`.
+  There are no file IDs to translate.
 
 ### Multipart
 
@@ -187,12 +175,12 @@ Content-Type: multipart/form-data; boundary=...
 
 command=python3 analyze.py files/input.csv
 timeout_seconds=60
-inputs=rbx_...
 files=@input.csv
 ```
 
 `files` parts are stored under `files/` before the command runs. The stored
-name is flattened to one path segment and returned as an input file ID.
+name is flattened to one path segment; refer to it as `files/<name>`. At most
+`RUNBOX_MAX_INPUTS` attachments are accepted.
 
 ### Response
 
@@ -201,7 +189,7 @@ name is flattened to one path segment and returned as an input file ID.
   "exit_code": 0,
   "stdout": "hello\n",
   "files": [
-    {"name": "report.csv", "file_id": "rbx_...", "size": 1280}
+    {"name": "report.csv", "path": "out/report.csv", "size": 1280}
   ],
   "duration_ms": 321
 }
@@ -211,7 +199,7 @@ name is flattened to one path segment and returned as an input file ID.
 - `stdout` contains stdout, then stderr when stderr is non-empty. Long output is
   truncated in the middle with a marker; the head and tail are preserved.
 - `files` are regular files under `out/` touched during this call, with
-  workspace-relative names (`report.csv`, `sub/chart.png`). Symlinks are
+  workspace-relative paths (`out/report.csv`, `out/sub/chart.png`). Symlinks are
   skipped. The list is bounded by `RUNBOX_MAX_OUTPUT_FILES` and
   `RUNBOX_MAX_OUTPUT_BYTES`.
 - An empty result is `[]`, not `null`.
@@ -237,7 +225,7 @@ curl -fsS -H "Authorization: Bearer $KEY" \
 ```
 
 ```json
-{"file_id": "rbx_...", "name": "input.csv", "size": 1280}
+{"path": "files/input.csv", "name": "input.csv", "size": 1280}
 ```
 
 The field may be named `file` or `files`. An existing file with the same name
@@ -257,25 +245,12 @@ curl -fsS -H "Authorization: Bearer $KEY" \
 ```
 
 ```json
-{"files": [{"file_id": "rbx_...", "name": "a.csv", "size": 10},
-           {"file_id": "rbx_...", "name": "b.csv", "size": 20}]}
+{"files": [{"path": "files/a.csv", "name": "a.csv", "size": 10},
+           {"path": "files/b.csv", "name": "b.csv", "size": 20}]}
 ```
 
 The request is bounded by `RUNBOX_MAX_BATCH_FILES` and
 `RUNBOX_MAX_REQUEST_BYTES`. Files stream to disk; none are buffered in memory.
-
-## GET /v1/files/{id}
-
-Download an uploaded (`files/`) or produced (`out/`) file.
-The response is `application/octet-stream` with:
-
-```
-Content-Disposition: attachment; filename="fallback.txt"; filename*=UTF-8''%E6%8A%A5%E8%A1%A8.xlsx
-```
-
-Clients should prefer `filename*` (RFC 5987) and fall back to `filename`.
-Range and HEAD requests are supported. Send `Range: bytes=0-1023` to receive
-`206 Partial Content`, or use `HEAD` to fetch headers without the body.
 
 ## GET /v1/path?path=out/report.csv
 
@@ -288,6 +263,10 @@ it runs `ls`:
 - the resolved path must remain inside the workspace after following
   symlinks;
 - directories are rejected.
+
+The response is `application/octet-stream` with a `Content-Disposition`
+header. Range and HEAD requests are supported: send `Range: bytes=0-1023` to
+receive `206 Partial Content`, or use `HEAD` to fetch headers without the body.
 
 ## GET /v1/list?path=out
 

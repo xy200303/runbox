@@ -123,10 +123,9 @@ func (c *Client) Run(ctx context.Context, req ExecRequest) (*Result, error) {
 	var response *http.Response
 	if len(req.Files) == 0 {
 		payload := struct {
-			Command        string   `json:"command"`
-			TimeoutSeconds int      `json:"timeout_seconds"`
-			Inputs         []string `json:"inputs,omitempty"`
-		}{req.Command, secondsCeil(timeout), req.Inputs}
+			Command        string `json:"command"`
+			TimeoutSeconds int    `json:"timeout_seconds"`
+		}{req.Command, secondsCeil(timeout)}
 		body, err := json.Marshal(payload)
 		if err != nil {
 			return nil, Internal(err.Error())
@@ -151,12 +150,6 @@ func (c *Client) Run(ctx context.Context, req ExecRequest) (*Result, error) {
 			if err := writer.WriteField("timeout_seconds", strconv.Itoa(secondsCeil(timeout))); err != nil {
 				pw.CloseWithError(err)
 				return
-			}
-			for _, input := range req.Inputs {
-				if err := writer.WriteField("inputs", input); err != nil {
-					pw.CloseWithError(err)
-					return
-				}
 			}
 			for _, file := range req.Files {
 				part, err := writer.CreateFormFile("files", file.Name)
@@ -193,7 +186,7 @@ func (c *Client) Run(ctx context.Context, req ExecRequest) (*Result, error) {
 
 // Exec implements Backend for callers that pass the identity per call. An
 // empty identity falls back to the client's bound identity.
-func (c *Client) Exec(ctx context.Context, identity Identity, command string, inputs []string, timeout time.Duration) (*Result, error) {
+func (c *Client) Exec(ctx context.Context, identity Identity, command string, timeout time.Duration) (*Result, error) {
 	client, err := c.scoped(identity)
 	if err != nil {
 		return nil, err
@@ -201,11 +194,10 @@ func (c *Client) Exec(ctx context.Context, identity Identity, command string, in
 	return client.Run(ctx, ExecRequest{
 		Command: command,
 		Timeout: timeout,
-		Inputs:  inputs,
 	})
 }
 
-// SaveFile uploads one attachment and returns its file id. It satisfies Backend.
+// SaveFile uploads one attachment and returns its workspace-relative path.
 func (c *Client) SaveFile(ctx context.Context, identity Identity, name string, reader io.Reader, size int64) (string, error) {
 	client, err := c.scoped(identity)
 	if err != nil {
@@ -215,7 +207,7 @@ func (c *Client) SaveFile(ctx context.Context, identity Identity, name string, r
 	if err != nil {
 		return "", err
 	}
-	return uploaded.FileID, nil
+	return uploaded.Path, nil
 }
 
 // Upload sends one file to the bound identity's files/ directory.
@@ -331,41 +323,6 @@ func (c *Client) DownloadArchive(ctx context.Context, identity Identity, paths [
 	return io.Copy(w, response.Body)
 }
 
-// OpenFile downloads an uploaded or produced file by id.
-func (c *Client) OpenFile(ctx context.Context, identity Identity, fileID string) (io.ReadCloser, string, error) {
-	client, err := c.scoped(identity)
-	if err != nil {
-		return nil, "", err
-	}
-	if fileID == "" {
-		return nil, "", BadRequest("file id is required")
-	}
-	request, err := client.newRequest(ctx, http.MethodGet, "/v1/files/"+url.PathEscape(fileID), nil, "")
-	if err != nil {
-		return nil, "", err
-	}
-	response, err := client.send(request)
-	if err != nil {
-		return nil, "", err
-	}
-	return response.Body, responseFilename(response), nil
-}
-
-// DownloadTo streams a file into w and returns the server-side name and the
-// number of bytes copied.
-func (c *Client) DownloadTo(ctx context.Context, fileID string, w io.Writer) (string, int64, error) {
-	reader, name, err := c.OpenFile(ctx, Identity{}, fileID)
-	if err != nil {
-		return "", 0, err
-	}
-	defer reader.Close()
-	n, err := io.Copy(w, reader)
-	if err != nil {
-		return name, n, err
-	}
-	return name, n, nil
-}
-
 // OpenPath downloads a file by its workspace-relative path (out/report.xlsx).
 func (c *Client) OpenPath(ctx context.Context, identity Identity, path string) (io.ReadCloser, string, error) {
 	client, err := c.scoped(identity)
@@ -384,6 +341,21 @@ func (c *Client) OpenPath(ctx context.Context, identity Identity, path string) (
 		return nil, "", err
 	}
 	return response.Body, responseFilename(response), nil
+}
+
+// DownloadPathTo streams a workspace file into w and returns the server-side
+// name and the number of bytes copied.
+func (c *Client) DownloadPathTo(ctx context.Context, identity Identity, path string, w io.Writer) (string, int64, error) {
+	reader, name, err := c.OpenPath(ctx, identity, path)
+	if err != nil {
+		return "", 0, err
+	}
+	defer reader.Close()
+	n, err := io.Copy(w, reader)
+	if err != nil {
+		return name, n, err
+	}
+	return name, n, nil
 }
 
 // List returns a directory listing inside the caller's workspace. An empty

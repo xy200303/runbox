@@ -4,8 +4,10 @@
 
 - Removed the immutable `keep/` archive, `POST /v1/files/{id}/keep`,
   `RUNBOX_KEEP_BYTES` and the `?purge` parameter. Callers download what they
-  need and persist it themselves; Runbox no longer keeps a second long-term
-  copy.
+  need and persist it themselves.
+- Files are addressed by workspace-relative path. Uploads return `path`, exec
+  outputs include `path`, and `GET /v1/files/{id}`, the exec `inputs` field and
+  the `rbx_` file-id format were removed.
 
 ## 0.1.0 — 2026-10-31
 
@@ -36,7 +38,8 @@ Initial extraction from the property-management platform's sandbox module.
   namespace + principal (`X-Runbox-Namespace`/`X-Runbox-Principal`), both
   normalized to a canonical SHA-256 key. Ambiguous/partial identities are
   rejected. Identity metadata is stored in `state/runbox.db`.
-- Versioned file IDs: `rbx_` + (version, identity key, kind, path).
+- Versioned file IDs: `rbx_` + (version, identity key, kind, path); removed in
+  0.2.0 in favor of workspace-relative paths.
 - Authentication is Bearer-only (`Authorization: Bearer`); `X-API-Key` is
   rejected.
 - Single-container, multi-identity design (dify-sandbox shape) with a

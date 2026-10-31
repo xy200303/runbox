@@ -34,7 +34,6 @@ type Options struct {
 	UIDMax          int
 	MaxUploadBytes  int64
 	MaxCommandBytes int64
-	MaxInputs       int
 	MaxStdoutBytes  int
 	MaxOutputFiles  int
 	MaxOutputBytes  int64
@@ -87,9 +86,6 @@ func New(opts Options) (*Runner, error) {
 	}
 	if opts.MaxCommandBytes <= 0 {
 		opts.MaxCommandBytes = 64 << 10
-	}
-	if opts.MaxInputs <= 0 {
-		opts.MaxInputs = 64
 	}
 	if opts.MaxStdoutBytes < 1024 {
 		opts.MaxStdoutBytes = sandbox.DefaultMaxStdoutBytes
@@ -436,7 +432,7 @@ func (r *Runner) SaveFile(ctx context.Context, identity sandbox.Identity, name s
 		os.Remove(tempName)
 		return "", sandbox.Internal("store upload: " + err.Error())
 	}
-	return sandbox.EncodeFile(key, sandbox.KindFiles, safeName), nil
+	return path.Join(sandbox.KindFiles, safeName), nil
 }
 
 // replaceFile removes an existing destination (including a symlink, which is
@@ -453,48 +449,6 @@ func replaceFile(tempName, destination string) error {
 		return err
 	}
 	return os.Rename(tempName, destination)
-}
-
-// OpenFile serves an uploaded or produced file by id.
-func (r *Runner) OpenFile(ctx context.Context, identity sandbox.Identity, fileID string) (io.ReadCloser, string, error) {
-	if apiErr := contextErr(ctx); apiErr != nil {
-		return nil, "", apiErr
-	}
-	key, apiErr := r.key(identity)
-	if apiErr != nil {
-		return nil, "", apiErr
-	}
-	ref, err := sandbox.DecodeFile(fileID)
-	if err != nil {
-		return nil, "", err
-	}
-	if ref.Key != key {
-		return nil, "", sandbox.Forbidden("file belongs to another workspace")
-	}
-	var root string
-	relative := ref.Path
-	switch ref.Kind {
-	case sandbox.KindFiles, sandbox.KindOut:
-		root = r.workspace(identity)
-		relative = path.Join(ref.Kind, ref.Path)
-	}
-	full, err := secureJoin(root, relative)
-	if err != nil {
-		return nil, "", err
-	}
-	file, err := os.Open(full)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, "", sandbox.NotFound("file not found")
-		}
-		return nil, "", sandbox.NotFound("file not found")
-	}
-	info, err := file.Stat()
-	if err != nil || !info.Mode().IsRegular() {
-		file.Close()
-		return nil, "", sandbox.NotFound("file not found")
-	}
-	return file, path.Base(ref.Path), nil
 }
 
 // OpenPath serves a file by workspace-relative path, which is what an agent
@@ -784,7 +738,7 @@ func dirSize(root string) (int64, error) {
 // collectOutputs returns files under out/ touched by this execution. Symlinks
 // are skipped: serving them as root would turn a harmless link into a read of
 // files the sandbox identity cannot access itself.
-func (r *Runner) collectOutputs(workspace string, since time.Time, key string) []sandbox.Output {
+func (r *Runner) collectOutputs(workspace string, since time.Time) []sandbox.Output {
 	outDir := filepath.Join(workspace, sandbox.KindOut)
 	outputs := make([]sandbox.Output, 0)
 	var total int64
@@ -818,9 +772,9 @@ func (r *Runner) collectOutputs(workspace string, since time.Time, key string) [
 		relative = filepath.ToSlash(relative)
 		total += info.Size()
 		outputs = append(outputs, sandbox.Output{
-			Name:   relative,
-			FileID: sandbox.EncodeFile(key, sandbox.KindOut, relative),
-			Size:   info.Size(),
+			Name: relative,
+			Path: path.Join(sandbox.KindOut, relative),
+			Size: info.Size(),
 		})
 		return nil
 	})

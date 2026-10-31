@@ -144,27 +144,20 @@ class Client:
         self,
         command: str,
         timeout: int = 60,
-        inputs: Optional[Iterable[str]] = None,
         files: Optional[Iterable[FileUpload]] = None,
         identity: Optional[Identity] = None,
     ) -> Dict[str, Any]:
-        input_list = list(inputs or [])
         file_list = list(files or [])
         request_timeout = max(self.timeout, timeout + 30)
         if not file_list:
             return self._json(
                 "POST",
                 "/v1/exec",
-                {
-                    "command": command,
-                    "timeout_seconds": timeout,
-                    "inputs": input_list,
-                },
+                {"command": command, "timeout_seconds": timeout},
                 identity=identity,
                 timeout=request_timeout,
             )
         fields: List[Tuple[str, str]] = [("command", command), ("timeout_seconds", str(timeout))]
-        fields.extend(("inputs", value) for value in input_list)
         return self._multipart("/v1/exec", fields, file_list, identity, request_timeout)
 
     def upload(self, name: str, data: bytes) -> Dict[str, Any]:
@@ -188,21 +181,6 @@ class Client:
 
     def delete_workspace(self, identity: Optional[Identity] = None) -> None:
         self._json("DELETE", "/v1/workspace", identity=identity)
-
-    def download_file(
-        self,
-        file_id: str,
-        destination: PathLike,
-        identity: Optional[Identity] = None,
-        range_header: Optional[str] = None,
-    ) -> None:
-        extra = {"Range": range_header} if range_header else None
-        self._download(
-            "/v1/files/" + urllib.parse.quote(file_id, safe=""),
-            destination,
-            identity,
-            extra,
-        )
 
     def download_path(
         self,

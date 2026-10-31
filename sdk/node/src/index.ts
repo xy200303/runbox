@@ -25,13 +25,12 @@ export interface FileUpload {
 
 export interface ExecOptions {
   timeoutSeconds?: number
-  inputs?: string[]
   files?: FileUpload[]
   identity?: Identity
 }
 
 export interface UploadedFile {
-  file_id: string
+  path: string
   name: string
   size: number
 }
@@ -143,19 +142,16 @@ export class Client {
 
   async exec(command: string, options: ExecOptions = {}): Promise<ExecResult> {
     const timeout = options.timeoutSeconds ?? 60
-    const inputs = options.inputs ?? []
     const files = options.files ?? []
     if (files.length === 0) {
       return this.json<ExecResult>('POST', '/v1/exec', {
         command,
         timeout_seconds: timeout,
-        inputs,
       }, options.identity)
     }
     const form = new FormData()
     form.set('command', command)
     form.set('timeout_seconds', String(timeout))
-    for (const input of inputs) form.append('inputs', input)
     for (const file of files) {
       form.append('files', await fileBlob(file), file.name)
     }
@@ -195,19 +191,6 @@ export class Client {
 
   async deleteWorkspace(identity?: Identity): Promise<void> {
     await this.json('DELETE', '/v1/workspace', undefined, identity)
-  }
-
-  async downloadFile(
-    fileId: string,
-    destination: string,
-    options: { identity?: Identity; range?: string } = {},
-  ): Promise<void> {
-    await this.download(
-      `/v1/files/${encodeURIComponent(fileId)}`,
-      destination,
-      options.identity,
-      options.range ? { Range: options.range } : undefined,
-    )
   }
 
   async downloadPath(

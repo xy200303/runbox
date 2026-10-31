@@ -35,7 +35,6 @@ Runbox has exactly one API:
 | Authentication | `Authorization: Bearer` |
 | Identity metadata | `state/runbox.db` (`identities`) |
 | Configuration | `RUNBOX_*` environment variables only |
-| File IDs | `rbx_` prefix, versioned four fields (version, key, kind, path) |
 | Workspace | `<root>/workspaces/<key>` |
 
 The following are **rejected**, not translated:
@@ -105,13 +104,12 @@ result, err := client.WithIdentity(identity).Run(ctx, sandbox.ExecRequest{
 Every method is context-aware:
 
 ```go
-reader, name, err := client.OpenFile(ctx, identity, fileID)
-reader, name, err = client.OpenPath(ctx, identity, "out/report.xlsx")
+reader, name, err := client.OpenPath(ctx, identity, "out/report.xlsx")
 entries, err := client.List(ctx, identity, "out")
 err = client.DeleteWorkspace(ctx, identity)
 ```
 
-The returned `*sandbox.Result` uses `exit_code`, `stdout`, `files[].file_id`
+The returned `*sandbox.Result` uses `exit_code`, `stdout`, `files[].path`
 and `files[].size`. Errors are `*sandbox.Error` with `Status`, `Code` and
 `Message`; map them into the application's error type at the boundary if the
 existing API needs business codes.
@@ -127,7 +125,7 @@ type Backend = sandbox.Backend
 then update the call sites:
 
 - `Exec` takes a `time.Duration`, not seconds;
-- `SaveFile`, `OpenFile`, `OpenPath`, `List` and `DeleteWorkspace`
+- `SaveFile`, `OpenPath`, `List` and `DeleteWorkspace`
   take a `context.Context`;
 - `DeleteWorkspace` and `List` are new methods;
 - errors are `*sandbox.Error`.
@@ -160,11 +158,10 @@ func (b runboxBackend) Exec(ctx context.Context, tenant, user, command string, i
 
 Runbox does not read old data:
 
-- old `sbx_` IDs are rejected, including IDs stored in the application
-  database;
+- old file IDs are rejected; files are addressed by workspace-relative path;
 - old workspaces under `/workspace/users/...` and old delivery directories are
   ignored;
-- new file IDs use `rbx_` and refer only to files created through Runbox.
+- new files are downloaded by relative path, for example `out/report.xlsx`.
 
 Before switching, export any old artifacts that must survive into the
 application's own file layer (object storage or `upload_file`). Treat old agent

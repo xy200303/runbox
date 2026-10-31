@@ -22,7 +22,7 @@ async function startServer() {
     }
     if (request.url === '/v1/files/batch') {
       response.writeHead(200, { 'Content-Type': 'application/json' })
-      response.end(JSON.stringify({ files: [{ file_id: 'rbx_a', name: 'a.txt', size: 3 }] }))
+      response.end(JSON.stringify({ files: [{ path: 'files/a.txt', name: 'a.txt', size: 3 }] }))
       return
     }
     if (request.url.startsWith('/v1/path')) {
@@ -84,7 +84,7 @@ test('batch upload sends file content', async () => {
     await writeFile(path, 'aaa')
     const client = new Client({ baseUrl, apiKey: 'test-key', identity: { token: 'alice' } })
     const uploaded = await client.uploadBatch([{ name: 'a.txt', path }])
-    assert.equal(uploaded[0].file_id, 'rbx_a')
+    assert.equal(uploaded[0].path, 'files/a.txt')
     assert.match(requests[0].body.toString(), /aaa/)
   } finally {
     await rm(directory, { recursive: true, force: true })

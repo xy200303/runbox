@@ -91,7 +91,7 @@ func TestClientDecodesRFC5987Filename(t *testing.T) {
 	if err != nil {
 		t.Fatalf("client: %v", err)
 	}
-	reader, name, err := client.OpenFile(context.Background(), Identity{}, "rbx_x")
+	reader, name, err := client.OpenPath(context.Background(), Identity{}, "out/report.xlsx")
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}

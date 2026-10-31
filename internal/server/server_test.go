@@ -263,8 +263,7 @@ func TestUploadExec(t *testing.T) {
 		t.Fatalf("upload: %v", err)
 	}
 	result, err := client.Run(ctx, sandbox.ExecRequest{
-		Command: catCommand("files/note.txt"),
-		Inputs:  []string{uploaded.FileID},
+		Command: catCommand(uploaded.Path),
 		Timeout: 5 * time.Second,
 	})
 	if err != nil {
@@ -297,9 +296,9 @@ func TestUploadExec(t *testing.T) {
 	if len(result.Files) != 1 || result.Files[0].Name != "report.txt" {
 		t.Fatalf("unexpected outputs: %+v", result.Files)
 	}
-	outputID := result.Files[0].FileID
+	outputPath := result.Files[0].Path
 
-	reader, name, err := client.OpenFile(ctx, sandbox.Identity{}, outputID)
+	reader, name, err := client.OpenPath(ctx, sandbox.Identity{}, outputPath)
 	if err != nil {
 		t.Fatalf("download output: %v", err)
 	}
@@ -410,7 +409,7 @@ func TestCrossWorkspaceAccess(t *testing.T) {
 		t.Fatalf("upload: %v", err)
 	}
 	bob := client.WithIdentity(sandbox.TokenIdentity("bob"))
-	if _, _, err := bob.OpenFile(ctx, sandbox.Identity{}, uploaded.FileID); err == nil {
+	if _, _, err := bob.OpenPath(ctx, sandbox.Identity{}, uploaded.Path); err == nil {
 		t.Fatal("another identity downloaded the file")
 	}
 }
@@ -511,7 +510,7 @@ func TestReadyAndMetrics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upload: %v", err)
 	}
-	reader, _, err := client.OpenFile(ctx, sandbox.Identity{}, uploaded.FileID)
+	reader, _, err := client.OpenPath(ctx, sandbox.Identity{}, uploaded.Path)
 	if err != nil {
 		t.Fatalf("download: %v", err)
 	}
@@ -570,7 +569,7 @@ func TestLargeUploadRangeAndHead(t *testing.T) {
 
 	request := func(method string, headers map[string]string) *http.Response {
 		t.Helper()
-		req, err := http.NewRequest(method, ts.URL+"/v1/files/"+uploaded.FileID, nil)
+		req, err := http.NewRequest(method, ts.URL+"/v1/path?path="+url.QueryEscape(uploaded.Path), nil)
 		if err != nil {
 			t.Fatalf("new request: %v", err)
 		}

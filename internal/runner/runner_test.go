@@ -83,21 +83,21 @@ func apiCode(t *testing.T, err error) string {
 
 func TestSaveFileIsolation(t *testing.T) {
 	executor := newTestRunner(t, nil)
-	fileID, err := executor.SaveFile(context.Background(), testID("alice"), "hello.txt", strings.NewReader("hi"), 2)
+	filePath, err := executor.SaveFile(context.Background(), testID("alice"), "hello.txt", strings.NewReader("hi"), 2)
 	if err != nil {
 		t.Fatalf("save: %v", err)
 	}
-	reader, name, err := executor.OpenFile(context.Background(), testID("alice"), fileID)
+	reader, name, err := executor.OpenPath(context.Background(), testID("alice"), filePath)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
 	if name != "hello.txt" || readAll(t, reader) != "hi" {
 		t.Fatalf("unexpected file %q", name)
 	}
-	if _, _, err := executor.OpenFile(context.Background(), testID("bob"), fileID); err == nil {
+	if _, _, err := executor.OpenPath(context.Background(), testID("bob"), filePath); err == nil {
 		t.Fatal("another identity must not read the file")
 	}
-	if _, _, err := executor.OpenFile(context.Background(), testID("other"), fileID); err == nil {
+	if _, _, err := executor.OpenPath(context.Background(), testID("other"), filePath); err == nil {
 		t.Fatal("another identity must not read the file")
 	}
 }
@@ -151,7 +151,7 @@ func TestOpenPathRejectsSymlinkEscape(t *testing.T) {
 	if _, _, err := executor.OpenPath(context.Background(), testID("alice"), "out/leak.txt"); err == nil {
 		t.Fatal("a symlink pointing outside the workspace must be rejected")
 	}
-	outputs := executor.collectOutputs(workspace, time.Now().Add(-time.Minute), testKey(t, "alice"))
+	outputs := executor.collectOutputs(workspace, time.Now().Add(-time.Minute))
 	for _, output := range outputs {
 		if output.Name == "leak.txt" {
 			t.Fatal("symlinks must not be reported as outputs")
@@ -162,7 +162,7 @@ func TestOpenPathRejectsSymlinkEscape(t *testing.T) {
 func TestExecOutputs(t *testing.T) {
 	executor := newTestRunner(t, nil)
 	ctx := context.Background()
-	result, err := executor.Exec(ctx, testID("alice"), writeCommand("out/report.txt", "data"), nil, 10*time.Second)
+	result, err := executor.Exec(ctx, testID("alice"), writeCommand("out/report.txt", "data"), 10*time.Second)
 	if err != nil {
 		t.Fatalf("exec: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestExecOutputs(t *testing.T) {
 		t.Fatalf("unexpected outputs: %+v", result.Files)
 	}
 	output := result.Files[0]
-	reader, _, err := executor.OpenFile(context.Background(), testID("alice"), output.FileID)
+	reader, _, err := executor.OpenPath(context.Background(), testID("alice"), output.Path)
 	if err != nil {
 		t.Fatalf("open output: %v", err)
 	}
@@ -205,33 +205,30 @@ func TestExecOutputs(t *testing.T) {
 
 func TestExecInputs(t *testing.T) {
 	executor := newTestRunner(t, nil)
-	fileID, err := executor.SaveFile(context.Background(), testID("alice"), "hello.txt", strings.NewReader("from-upload"), 11)
+	filePath, err := executor.SaveFile(context.Background(), testID("alice"), "hello.txt", strings.NewReader("from-upload"), 11)
 	if err != nil {
 		t.Fatalf("save: %v", err)
 	}
-	result, err := executor.Exec(context.Background(), testID("alice"), catCommand("files/hello.txt"), []string{fileID}, 10*time.Second)
+	result, err := executor.Exec(context.Background(), testID("alice"), catCommand(filePath), 10*time.Second)
 	if err != nil {
 		t.Fatalf("exec: %v", err)
 	}
 	if !strings.Contains(result.Stdout, "from-upload") {
 		t.Fatalf("input not visible: %q", result.Stdout)
 	}
-	if _, err := executor.Exec(context.Background(), testID("alice"), catCommand("files/hello.txt"), []string{sandbox.EncodeFile("bob", "files", "hello.txt")}, time.Second); err == nil {
-		t.Fatal("an input from another workspace must be rejected")
-	}
 }
 
 func TestExecExitCodeAndStderr(t *testing.T) {
 	executor := newTestRunner(t, nil)
 	ctx := context.Background()
-	result, err := executor.Exec(ctx, testID("alice"), stderrCommand("oops"), nil, 10*time.Second)
+	result, err := executor.Exec(ctx, testID("alice"), stderrCommand("oops"), 10*time.Second)
 	if err != nil {
 		t.Fatalf("stderr exec: %v", err)
 	}
 	if !strings.Contains(result.Stdout, "oops") {
 		t.Fatalf("stderr not captured: %q", result.Stdout)
 	}
-	result, err = executor.Exec(ctx, testID("alice"), exitCommand(7), nil, 10*time.Second)
+	result, err = executor.Exec(ctx, testID("alice"), exitCommand(7), 10*time.Second)
 	if err != nil {
 		t.Fatalf("exit exec: %v", err)
 	}
@@ -243,7 +240,7 @@ func TestExecExitCodeAndStderr(t *testing.T) {
 func TestExecTimeout(t *testing.T) {
 	executor := newTestRunner(t, nil)
 	started := time.Now()
-	_, err := executor.Exec(context.Background(), testID("alice"), sleepCommand(), nil, 200*time.Millisecond)
+	_, err := executor.Exec(context.Background(), testID("alice"), sleepCommand(), 200*time.Millisecond)
 	if apiCode(t, err) != "timeout" {
 		t.Fatalf("expected timeout, got %v", err)
 	}
@@ -256,7 +253,7 @@ func TestExecBusy(t *testing.T) {
 	executor := newTestRunner(t, func(options *Options) { options.MaxConcurrency = 1 })
 	executor.sem <- struct{}{}
 	defer func() { <-executor.sem }()
-	_, err := executor.Exec(context.Background(), testID("alice"), echoCommand("hi"), nil, time.Second)
+	_, err := executor.Exec(context.Background(), testID("alice"), echoCommand("hi"), time.Second)
 	if apiCode(t, err) != "busy" {
 		t.Fatalf("expected busy, got %v", err)
 	}
@@ -267,7 +264,7 @@ func TestExecQuota(t *testing.T) {
 	if _, err := executor.SaveFile(context.Background(), testID("alice"), "big.txt", strings.NewReader(strings.Repeat("x", 64)), 64); err != nil {
 		t.Fatalf("save: %v", err)
 	}
-	_, err := executor.Exec(context.Background(), testID("alice"), echoCommand("hi"), nil, time.Second)
+	_, err := executor.Exec(context.Background(), testID("alice"), echoCommand("hi"), time.Second)
 	if apiCode(t, err) != "quota_exceeded" {
 		t.Fatalf("expected quota_exceeded, got %v", err)
 	}
@@ -371,7 +368,7 @@ func TestUploadOverwrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second save: %v", err)
 	}
-	reader, _, err := executor.OpenFile(ctx, testID("alice"), second)
+	reader, _, err := executor.OpenPath(ctx, testID("alice"), second)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -382,14 +379,14 @@ func TestUploadOverwrite(t *testing.T) {
 
 func TestNestedOutput(t *testing.T) {
 	executor := newTestRunner(t, nil)
-	result, err := executor.Exec(context.Background(), testID("alice"), nestedOutputCommand(), nil, 10*time.Second)
+	result, err := executor.Exec(context.Background(), testID("alice"), nestedOutputCommand(), 10*time.Second)
 	if err != nil {
 		t.Fatalf("exec: %v", err)
 	}
 	if len(result.Files) != 1 || result.Files[0].Name != "sub/n.txt" {
 		t.Fatalf("unexpected nested outputs: %+v", result.Files)
 	}
-	reader, _, err := executor.OpenFile(context.Background(), testID("alice"), result.Files[0].FileID)
+	reader, _, err := executor.OpenPath(context.Background(), testID("alice"), result.Files[0].Path)
 	if err != nil {
 		t.Fatalf("open nested: %v", err)
 	}
@@ -400,7 +397,7 @@ func TestNestedOutput(t *testing.T) {
 
 func TestOutputFileCap(t *testing.T) {
 	executor := newTestRunner(t, func(options *Options) { options.MaxOutputFiles = 1 })
-	result, err := executor.Exec(context.Background(), testID("alice"), twoOutputsCommand(), nil, 10*time.Second)
+	result, err := executor.Exec(context.Background(), testID("alice"), twoOutputsCommand(), 10*time.Second)
 	if err != nil {
 		t.Fatalf("exec: %v", err)
 	}
@@ -417,7 +414,7 @@ func TestConcurrentIdentities(t *testing.T) {
 		wait.Add(1)
 		go func(identity string) {
 			defer wait.Done()
-			_, err := executor.Exec(context.Background(), testID(identity), echoCommand("hi"), nil, 5*time.Second)
+			_, err := executor.Exec(context.Background(), testID(identity), echoCommand("hi"), 5*time.Second)
 			errs <- err
 		}(identity)
 	}
@@ -449,20 +446,11 @@ func TestReady(t *testing.T) {
 func TestExecLimitBoundaries(t *testing.T) {
 	executor := newTestRunner(t, func(options *Options) {
 		options.MaxCommandBytes = 8
-		options.MaxInputs = 1
 	})
 	ctx := context.Background()
-	_, err := executor.Exec(ctx, testID("alice"), "echo 12345", nil, time.Second)
+	_, err := executor.Exec(ctx, testID("alice"), "echo 12345", time.Second)
 	if apiCode(t, err) != "bad_request" {
 		t.Fatalf("expected command limit error, got %v", err)
-	}
-	inputs := []string{
-		sandbox.EncodeFile(testKey(t, "alice"), sandbox.KindFiles, "a"),
-		sandbox.EncodeFile(testKey(t, "alice"), sandbox.KindFiles, "b"),
-	}
-	_, err = executor.Exec(ctx, testID("alice"), echoCommand("hi"), inputs, time.Second)
-	if apiCode(t, err) != "bad_request" {
-		t.Fatalf("expected input limit error, got %v", err)
 	}
 }
 

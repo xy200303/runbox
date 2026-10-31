@@ -78,21 +78,19 @@ func (s *Server) handleExec(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, s.cfg.MaxRequestBytes)
 
 	var command string
-	var inputs []string
 	var timeout time.Duration
 	mediaType, _, _ := mime.ParseMediaType(c.GetHeader("Content-Type"))
 	switch mediaType {
 	case "multipart/form-data":
-		command, inputs, timeout, err = s.parseExecMultipart(c, identity)
+		command, timeout, err = s.parseExecMultipart(c, identity)
 		if err != nil {
 			s.failExec(c, err)
 			return
 		}
 	case "application/json", "":
 		var payload struct {
-			Command        string   `json:"command"`
-			TimeoutSeconds int      `json:"timeout_seconds"`
-			Inputs         []string `json:"inputs"`
+			Command        string `json:"command"`
+			TimeoutSeconds int    `json:"timeout_seconds"`
 		}
 		decoder := json.NewDecoder(c.Request.Body)
 		if decodeErr := decoder.Decode(&payload); decodeErr != nil && !errors.Is(decodeErr, io.EOF) {
@@ -103,17 +101,12 @@ func (s *Server) handleExec(c *gin.Context) {
 		if payload.TimeoutSeconds > 0 {
 			timeout = time.Duration(payload.TimeoutSeconds) * time.Second
 		}
-		inputs = payload.Inputs
-		if len(inputs) > s.cfg.MaxInputs {
-			s.failExec(c, sandbox.BadRequest(fmt.Sprintf("too many inputs (limit %d)", s.cfg.MaxInputs)))
-			return
-		}
 	default:
 		s.failExec(c, sandbox.UnsupportedMediaType("Content-Type must be application/json or multipart/form-data"))
 		return
 	}
 
-	result, err := s.runner.Exec(c.Request.Context(), identity, command, inputs, timeout)
+	result, err := s.runner.Exec(c.Request.Context(), identity, command, timeout)
 	if err != nil {
 		s.failExec(c, err)
 		return
@@ -124,21 +117,21 @@ func (s *Server) handleExec(c *gin.Context) {
 // parseExecMultipart reads a multipart exec request without buffering file
 // bodies in memory. Values are bounded per field; files stream into the
 // identity workspace as they are read.
-func (s *Server) parseExecMultipart(c *gin.Context, identity sandbox.Identity) (string, []string, time.Duration, error) {
+func (s *Server) parseExecMultipart(c *gin.Context, identity sandbox.Identity) (string, time.Duration, error) {
 	reader, err := c.Request.MultipartReader()
 	if err != nil {
-		return "", nil, 0, bodyError(err, "invalid multipart body")
+		return "", 0, bodyError(err, "invalid multipart body")
 	}
 	var command string
 	var timeout time.Duration
-	inputs := make([]string, 0)
+	files := 0
 	for {
 		part, err := reader.NextPart()
 		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
-			return "", nil, 0, bodyError(err, "invalid multipart body")
+			return "", 0, bodyError(err, "invalid multipart body")
 		}
 		name := part.FormName()
 		filename := part.FileName()
@@ -146,18 +139,13 @@ func (s *Server) parseExecMultipart(c *gin.Context, identity sandbox.Identity) (
 			value, valueErr := s.readPartValue(part, name)
 			part.Close()
 			if valueErr != nil {
-				return "", nil, 0, valueErr
+				return "", 0, valueErr
 			}
 			switch name {
 			case "command":
 				command = value
 			case "timeout_seconds":
 				timeout = parseTimeoutSeconds(value)
-			case "inputs":
-				if len(inputs)+1 > s.cfg.MaxInputs {
-					return "", nil, 0, sandbox.BadRequest(fmt.Sprintf("too many inputs (limit %d)", s.cfg.MaxInputs))
-				}
-				inputs = append(inputs, value)
 			}
 			continue
 		}
@@ -166,20 +154,20 @@ func (s *Server) parseExecMultipart(c *gin.Context, identity sandbox.Identity) (
 			part.Close()
 			continue
 		}
-		if len(inputs)+1 > s.cfg.MaxInputs {
+		if files >= s.cfg.MaxInputs {
 			part.Close()
-			return "", nil, 0, sandbox.BadRequest(fmt.Sprintf("too many inputs (limit %d)", s.cfg.MaxInputs))
+			return "", 0, sandbox.BadRequest(fmt.Sprintf("too many attachments (limit %d)", s.cfg.MaxInputs))
 		}
+		files++
 		counting := &countingReader{reader: part}
-		fileID, saveErr := s.runner.SaveFile(c.Request.Context(), identity, filename, counting, -1)
+		_, saveErr := s.runner.SaveFile(c.Request.Context(), identity, filename, counting, -1)
 		part.Close()
 		s.metrics.uploadBytes.Add(counting.n)
 		if saveErr != nil {
-			return "", nil, 0, saveErr
+			return "", 0, saveErr
 		}
-		inputs = append(inputs, fileID)
 	}
-	return command, inputs, timeout, nil
+	return command, timeout, nil
 }
 
 func (s *Server) readPartValue(part *multipart.Part, name string) (string, error) {
@@ -232,7 +220,7 @@ func (s *Server) handleUpload(c *gin.Context) {
 			continue
 		}
 		counting := &countingReader{reader: part}
-		fileID, saveErr := s.runner.SaveFile(c.Request.Context(), identity, filename, counting, -1)
+		filePath, saveErr := s.runner.SaveFile(c.Request.Context(), identity, filename, counting, -1)
 		part.Close()
 		s.metrics.uploadBytes.Add(counting.n)
 		if saveErr != nil {
@@ -240,9 +228,9 @@ func (s *Server) handleUpload(c *gin.Context) {
 			return
 		}
 		writeJSON(c, http.StatusOK, sandbox.UploadedFile{
-			FileID: fileID,
-			Name:   sandbox.SanitizeFileName(filename),
-			Size:   counting.n,
+			Path: filePath,
+			Name: sandbox.SanitizeFileName(filename),
+			Size: counting.n,
 		})
 		return
 	}
@@ -284,7 +272,7 @@ func (s *Server) handleUploadBatch(c *gin.Context) {
 			return
 		}
 		counting := &countingReader{reader: part}
-		fileID, saveErr := s.runner.SaveFile(c.Request.Context(), identity, filename, counting, -1)
+		filePath, saveErr := s.runner.SaveFile(c.Request.Context(), identity, filename, counting, -1)
 		part.Close()
 		s.metrics.uploadBytes.Add(counting.n)
 		if saveErr != nil {
@@ -292,9 +280,9 @@ func (s *Server) handleUploadBatch(c *gin.Context) {
 			return
 		}
 		files = append(files, sandbox.UploadedFile{
-			FileID: fileID,
-			Name:   sandbox.SanitizeFileName(filename),
-			Size:   counting.n,
+			Path: filePath,
+			Name: sandbox.SanitizeFileName(filename),
+			Size: counting.n,
 		})
 	}
 	if len(files) == 0 {
@@ -354,20 +342,6 @@ func (s *Server) handleBatchDownload(c *gin.Context) {
 		slog.Warn("batch download close failed", "error", closeErr.Error())
 	}
 	s.metrics.downloadBytes.Add(written)
-}
-
-func (s *Server) handleFile(c *gin.Context) {
-	identity, err := s.identity(c)
-	if err != nil {
-		s.fail(c, err)
-		return
-	}
-	reader, name, err := s.runner.OpenFile(c.Request.Context(), identity, c.Param("id"))
-	if err != nil {
-		s.fail(c, err)
-		return
-	}
-	s.serveDownload(c, name, reader)
 }
 
 func (s *Server) handlePath(c *gin.Context) {

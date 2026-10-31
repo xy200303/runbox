@@ -5,29 +5,6 @@ import (
 	"testing"
 )
 
-func FuzzDecodeFile(f *testing.F) {
-	key, _ := TokenIdentity("ns.user").CanonicalKey()
-	f.Add(EncodeFile(key, KindOut, "out/report.txt"))
-	f.Add("")
-	f.Add(FileIDPrefix)
-	f.Add(FileIDPrefix + "!!!!")
-	f.Fuzz(func(t *testing.T, input string) {
-		ref, err := DecodeFile(input)
-		if err != nil {
-			return
-		}
-		if !ValidKey(ref.Key) {
-			t.Fatalf("decoded invalid identity key: %+v", ref)
-		}
-		if !validKind(ref.Kind) {
-			t.Fatalf("decoded invalid kind: %+v", ref)
-		}
-		if _, err := NormalizeRel(ref.Path); err != nil {
-			t.Fatalf("decoded unnormalizable path: %+v", ref)
-		}
-	})
-}
-
 func FuzzNormalizeRel(f *testing.F) {
 	for _, seed := range []string{
 		"out/a.txt",

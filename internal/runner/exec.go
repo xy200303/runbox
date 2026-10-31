@@ -17,7 +17,7 @@ import (
 
 // Exec runs one command as the identity's UID and collects files written to
 // out/ during the call. A non-zero exit code is a normal result.
-func (r *Runner) Exec(ctx context.Context, identity sandbox.Identity, command string, inputs []string, timeout time.Duration) (*sandbox.Result, error) {
+func (r *Runner) Exec(ctx context.Context, identity sandbox.Identity, command string, timeout time.Duration) (*sandbox.Result, error) {
 	key, apiErr := r.key(identity)
 	if apiErr != nil {
 		return nil, apiErr
@@ -28,18 +28,6 @@ func (r *Runner) Exec(ctx context.Context, identity sandbox.Identity, command st
 	}
 	if int64(len(command)) > r.opts.MaxCommandBytes {
 		return nil, sandbox.BadRequest(fmt.Sprintf("command exceeds the %d byte limit", r.opts.MaxCommandBytes))
-	}
-	if len(inputs) > r.opts.MaxInputs {
-		return nil, sandbox.BadRequest(fmt.Sprintf("too many inputs (limit %d)", r.opts.MaxInputs))
-	}
-	for _, input := range inputs {
-		ref, err := sandbox.DecodeFile(input)
-		if err != nil {
-			return nil, err
-		}
-		if ref.Key != key {
-			return nil, sandbox.BadRequest("attachment belongs to another workspace")
-		}
 	}
 
 	lock := r.lockFor(key)
@@ -101,7 +89,7 @@ func (r *Runner) Exec(ctx context.Context, identity sandbox.Identity, command st
 	return &sandbox.Result{
 		ExitCode:   outcome.exitCode,
 		Stdout:     sandbox.TruncateTail(output, r.opts.MaxStdoutBytes),
-		Files:      r.collectOutputs(workspace, started.Add(-time.Second), key),
+		Files:      r.collectOutputs(workspace, started.Add(-time.Second)),
 		DurationMS: outcome.duration.Milliseconds(),
 	}, nil
 }

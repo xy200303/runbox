@@ -50,7 +50,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		name, written, err := client.DownloadTo(ctx, output.FileID, file)
+		name, written, err := client.DownloadPathTo(ctx, sandbox.Identity{}, output.Path, file)
 		file.Close()
 		if err != nil {
 			log.Fatal(err)
