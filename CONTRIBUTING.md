@@ -60,4 +60,6 @@ body explaining the why when the change is not obvious.
    GitHub release, and the Python/npm jobs publish when `PYPI_API_TOKEN` and
    `NPM_TOKEN` are configured.
 4. The website deploys from `main` through `pages.yml`.
+5. To publish the Python/npm packages independently, add `PYPI_API_TOKEN` and
+   `NPM_TOKEN` repository secrets and run the `sdk-publish` workflow.
 
