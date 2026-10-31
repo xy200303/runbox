@@ -3,16 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Runbox — Run in a box. 单容器、多身份的 Agent 执行沙箱</title>
+    <title>Runbox — Run in a box. 专为单机服务器打造的轻量 Agent 沙箱</title>
     <meta
       name="description"
-      content="Runbox 是给 Agent 执行命令、处理文件的轻量沙箱。一个容器承载多个身份，每个身份拥有独立 UID、私有工作区和持久安装环境。"
+      content="Runbox 是专为单机服务器打造的轻量 Agent 沙箱。一个容器承载多个身份，每个身份拥有独立 UID、私有工作区和持久安装环境，不需要编排器或外部数据库。"
     />
     <meta name="theme-color" content="#0b1220" />
     <meta property="og:title" content="Runbox — Run in a box." />
     <meta
       property="og:description"
-      content="单容器、多身份的 Agent 执行与文件后端。一个二进制、一个容器、一个卷。"
+      content="专为单机服务器打造的 Agent 执行与文件后端。一个二进制、一个容器、一个卷，单容器承载多个身份。"
     />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://runbox.xyun.dev/" />
@@ -43,12 +43,13 @@
     <main id="top">
       <section class="hero">
         <div class="hero-copy">
-          <span class="pill">v0.1.0 · MIT · 单容器多身份</span>
+          <span class="pill">v0.1.0 · MIT · 单机服务器</span>
           <h1>Run in a box.</h1>
-          <p class="hero-lead">一个容器，装下 Agent 的命令与文件。</p>
+          <p class="hero-lead">专为单机服务器打造的轻量 Agent 沙箱。</p>
           <p class="hero-body">
-            Runbox 给每个身份一个独立的 Linux 工作区：上传输入、执行 Python / Node / Shell、取回产物。
-            多个身份共享一个长期运行的容器，各自拥有 UID、私有目录、配额和持久安装环境。
+            一个容器，装下 Agent 的命令与文件。Runbox 给每个身份一个独立的 Linux 工作区：
+            上传输入、执行 Python / Node / Shell、取回产物。多个身份共享一个长期运行的容器，
+            各自拥有 UID、私有目录、配额和持久安装环境，不需要编排器或外部数据库。
           </p>
           <div class="actions">
             <a class="button primary" href="#start">快速开始</a>
@@ -80,7 +81,7 @@
       </section>
 
       <section class="stats" aria-label="关键指标">
-        <div><strong>1</strong><span>个二进制</span></div>
+        <div><strong>1 台</strong><span>单机服务器</span></div>
         <div><strong>1</strong><span>个容器</span></div>
         <div><strong>1</strong><span>个卷</span></div>
         <div><strong>多身份</strong><span>共享一个盒子</span></div>
@@ -368,7 +369,7 @@ security_opt:
       <section class="cta">
         <div>
           <span class="eyebrow">Run in a box.</span>
-          <h2>一个盒子，装下命令和文件。</h2>
+          <h2>一台服务器，一个盒子，装下命令和文件。</h2>
           <p>从 Docker 或 SDK 开始，十分钟内跑通第一条命令。</p>
         </div>
         <div class="actions">

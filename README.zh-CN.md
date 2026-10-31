@@ -26,14 +26,14 @@
 </p>
 
 <p align="center">
-  <sub><strong>1</strong> 个二进制 · <strong>1</strong> 个容器 · <strong>1</strong> 个卷 · <strong>SQLite</strong> 状态 · <strong>Go / Python / Node</strong> SDK</sub>
+  <sub><strong>1</strong> 台服务器 · <strong>1</strong> 个二进制 · <strong>1</strong> 个容器 · <strong>1</strong> 个卷 · <strong>SQLite</strong> 状态 · <strong>Go / Python / Node</strong> SDK</sub>
 </p>
 
 ---
 
-**Runbox** 是给 Agent 负载使用的轻量沙箱。它为每个调用方提供可持久化的 Linux 工作区：上传输入、执行 Python / Node / Shell、取回结果。多个身份共享一个长期运行的容器，同时各自拥有独立 UID、私有工作区、配额和不可变归档。
+**Runbox** 是专为单机服务器打造的轻量 Agent 沙箱。它为每个调用方提供可持久化的 Linux 工作区：上传输入、执行 Python / Node / Shell、取回结果。多个身份共享一个长期运行的容器，同时各自拥有独立 UID、私有工作区、配额和不可变归档。
 
-部署保持简单：一个 Go 二进制、一个容器、一个卷，对外只有一套 HTTP 接口。名字就是字面意思：**run in a box**。
+部署保持简单：一台服务器、一个 Go 二进制、一个容器、一个卷，对外只有一套 HTTP 接口。不需要调度器、控制面或外部数据库。名字就是字面意思：**run in a box**。
 
 ## 目录结构
 
@@ -73,6 +73,7 @@ Runbox 采用 **dify-sandbox 的形态**：一个长期运行的容器，承载�
 
 | | 说明 |
 |---|---|
+| **单机优先** | 为单台服务器设计：不需要调度器、控制面或外部数据库。SQLite 和工作区都在同一个数据卷里。 |
 | **单容器、多身份** | HTTP runner 与执行环境共处一个长期运行的容器。每个身份用自己的 UID；同一身份的调用串行，不同身份可并发。 |
 | **按身份隔离文件** | 私有工作区、工作区配额、可写目录之外的不可变归档。符号链接无法用来读取或带出 runner 拥有的文件。 |
 | **工作区可持久化** | 安装过的包和中间文件跨调用保留。`HOME`、XDG 目录、pip/npm 前缀都在工作区内，并计入配额。 |

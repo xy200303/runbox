@@ -3,6 +3,7 @@
 ## Goals
 
 - Give an agent a Linux workspace it can edit freely, across multiple calls.
+- Be the sandbox you run on one server: no cluster or scheduler required.
 - Keep execution isolated enough for mutually non-hostile users on one host.
 - Keep the deployable unit small: one binary, one container, embedded SQLite.
 - Keep the wire contract usable from any language.

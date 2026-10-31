@@ -26,14 +26,14 @@
 </p>
 
 <p align="center">
-  <sub><strong>1</strong> binary · <strong>1</strong> container · <strong>1</strong> volume · <strong>SQLite</strong> state · <strong>Go / Python / Node</strong> SDKs</sub>
+  <sub><strong>1</strong> server · <strong>1</strong> binary · <strong>1</strong> container · <strong>1</strong> volume · <strong>SQLite</strong> state · <strong>Go / Python / Node</strong> SDKs</sub>
 </p>
 
 ---
 
-**Runbox** is a lightweight sandbox for agent workloads. It gives each caller a persistent Linux workspace: upload inputs, run Python, Node or shell commands, and collect the results. Identities share one long-running container, but keep separate UIDs, private workspaces, quotas and an immutable archive.
+**Runbox** is a lightweight agent sandbox built for a single server. It gives each caller a persistent Linux workspace: upload inputs, run Python, Node or shell commands, and collect the results. Identities share one long-running container, but keep separate UIDs, private workspaces, quotas and an immutable archive.
 
-It is small on purpose: one Go binary, one container, one volume, and a single HTTP API. The name is literal: **run in a box**.
+It is small on purpose: one Go binary, one container, one volume, and a single HTTP API. No scheduler, no control plane, no external database. The name is literal: **run in a box**.
 
 ## Project layout
 
@@ -73,6 +73,7 @@ Choose Runbox when you want one container next to your application, semi-trusted
 
 | | What you get |
 |---|---|
+| **Single-machine first** | Designed for one server: no scheduler, no control plane, no external database. SQLite and the workspaces live on the same volume. |
 | **One container, many identities** | The HTTP runner and the execution environment share one long-lived container. Each identity runs under its own UID; calls for one identity are serialized, different identities run concurrently. |
 | **Per-identity file isolation** | A private workspace, a workspace quota and an immutable archive outside the writable tree. Symlinks cannot be used to read or exfiltrate runner-owned files. |
 | **Persistent workspaces** | Installed packages and intermediate files survive across calls. `HOME`, XDG directories and pip/npm prefixes all point inside the workspace and count toward the quota. |
