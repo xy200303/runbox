@@ -673,3 +673,137 @@ func sleepCommand() string {
 func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }
+
+func TestDeletePathRemovesFileAndFreesQuota(t *testing.T) {
+	ts, client, _, _ := newTestServer(t, func(cfg *config.Config) {
+		cfg.QuotaBytes = 1 << 20
+		cfg.MaxUploadBytes = 4 << 20
+		cfg.MaxRequestBytes = 8 << 20
+	})
+	ctx := context.Background()
+
+	// Uploading is not quota-checked, so this pushes the workspace over the
+	// limit without a command ever running.
+	if _, err := client.Upload(ctx, "big.bin", strings.NewReader(strings.Repeat("x", 2<<20)), 2<<20); err != nil {
+		t.Fatalf("upload: %v", err)
+	}
+
+	call := func(method, identity, path string) *http.Response {
+		t.Helper()
+		req, err := http.NewRequest(method, ts.URL+"/v1/path?path="+url.QueryEscape(path), nil)
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		req.Header.Set("Authorization", "Bearer test-key")
+		req.Header.Set("X-Runbox-Identity", identity)
+		response, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("%s %s: %v", method, path, err)
+		}
+		return response
+	}
+
+	// Over quota: every command is refused.
+	if _, err := client.Run(ctx, sandbox.ExecRequest{Command: "true", Timeout: 5 * time.Second}); err == nil {
+		t.Fatal("expected quota_exceeded")
+	} else {
+		var apiErr *sandbox.Error
+		if !errors.As(err, &apiErr) || apiErr.Code != "quota_exceeded" {
+			t.Fatalf("code = %v, want quota_exceeded", err)
+		}
+	}
+
+	// The escape hatch: delete one path without running a command.
+	response := call(http.MethodDelete, "alice", "files/big.bin")
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("delete path status %d, want 200", response.StatusCode)
+	}
+
+	if _, err := client.Run(ctx, sandbox.ExecRequest{Command: "true", Timeout: 5 * time.Second}); err != nil {
+		t.Fatalf("command should run again after freeing space: %v", err)
+	}
+
+	// Missing path, workspace root and someone else's path are all rejected.
+	for _, testCase := range []struct {
+		name     string
+		identity string
+		path     string
+		want     int
+	}{
+		{"missing", "alice", "files/missing.bin", http.StatusNotFound},
+		{"workspace root", "alice", "", http.StatusBadRequest},
+		{"dot root", "alice", ".", http.StatusBadRequest},
+	} {
+		response := call(http.MethodDelete, testCase.identity, testCase.path)
+		response.Body.Close()
+		if response.StatusCode != testCase.want {
+			t.Fatalf("%s: status %d, want %d", testCase.name, response.StatusCode, testCase.want)
+		}
+	}
+
+	if _, err := client.Upload(ctx, "secret.bin", strings.NewReader("secret"), 6); err != nil {
+		t.Fatalf("upload: %v", err)
+	}
+	response = call(http.MethodDelete, "bob", "files/secret.bin")
+	response.Body.Close()
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("other identity delete status %d, want 404", response.StatusCode)
+	}
+}
+
+func TestArchiveRejectsTooManyPaths(t *testing.T) {
+	ts, client, _, _ := newTestServer(t, nil)
+	if _, err := client.Run(context.Background(), sandbox.ExecRequest{
+		Command: writeCommand("out/a.txt", "a"), Timeout: 5 * time.Second,
+	}); err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+
+	paths := make([]string, 0, 1001)
+	for i := 0; i < 1001; i++ {
+		paths = append(paths, "path=out/a.txt")
+	}
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/v1/archive?"+strings.Join(paths, "&"), nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer test-key")
+	req.Header.Set("X-Runbox-Identity", "alice")
+	response, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status %d, want 400", response.StatusCode)
+	}
+}
+
+func TestExecRejectsDuplicateCommandField(t *testing.T) {
+	ts, _, _, _ := newTestServer(t, nil)
+	boundary := "----rbtest"
+	body := strings.Join([]string{
+		"--" + boundary,
+		`Content-Disposition: form-data; name="command"`, "", "true",
+		"--" + boundary,
+		`Content-Disposition: form-data; name="command"`, "", "touch out/smuggled",
+		"--" + boundary + "--", "",
+	}, "\r\n")
+
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/v1/exec", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer test-key")
+	req.Header.Set("X-Runbox-Identity", "alice")
+	req.Header.Set("Content-Type", "multipart/form-data; boundary="+boundary)
+	response, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("exec: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status %d, want 400", response.StatusCode)
+	}
+}

@@ -141,9 +141,22 @@ func New(opts Options) (*Runner, error) {
 		userUID:        map[string]int{},
 		locks:          map[string]*sync.Mutex{},
 	}
-	for _, dir := range []string{root, runner.workspacesRoot, runner.stateRoot} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return nil, fmt.Errorf("create %s: %w", dir, err)
+	// The workspace root must stay traversable but not listable: an identity
+	// reaches its own directory by path and must not enumerate the others.
+	// The state directory holds the identity table, so it is root-only.
+	for _, dir := range []struct {
+		path string
+		mode os.FileMode
+	}{
+		{root, 0o755},
+		{runner.workspacesRoot, 0o711},
+		{runner.stateRoot, 0o700},
+	} {
+		if err := os.MkdirAll(dir.path, dir.mode); err != nil {
+			return nil, fmt.Errorf("create %s: %w", dir.path, err)
+		}
+		if err := os.Chmod(dir.path, dir.mode); err != nil {
+			return nil, fmt.Errorf("chmod %s: %w", dir.path, err)
 		}
 	}
 	st, err := store.Open(filepath.Join(runner.stateRoot, "runbox.db"))
@@ -465,13 +478,14 @@ func (r *Runner) OpenPath(ctx context.Context, identity sandbox.Identity, relPat
 	if err != nil {
 		return nil, "", err
 	}
-	file, err := os.Open(full)
-	if err != nil {
+	// Stat before opening: opening a FIFO blocks until a writer appears, which
+	// would pin this request (and its goroutine) indefinitely.
+	info, err := os.Lstat(full)
+	if err != nil || !info.Mode().IsRegular() {
 		return nil, "", sandbox.NotFound("file not found")
 	}
-	info, err := file.Stat()
-	if err != nil || !info.Mode().IsRegular() {
-		file.Close()
+	file, err := os.Open(full)
+	if err != nil {
 		return nil, "", sandbox.NotFound("file not found")
 	}
 	return file, filepath.Base(full), nil
@@ -556,6 +570,9 @@ func (r *Runner) BatchFiles(ctx context.Context, identity sandbox.Identity, path
 	if len(paths) == 0 {
 		return nil, sandbox.BadRequest("at least one path is required")
 	}
+	if len(paths) > r.opts.MaxBatchFiles {
+		return nil, sandbox.BadRequest(fmt.Sprintf("archive accepts at most %d paths", r.opts.MaxBatchFiles))
+	}
 	workspace := r.workspace(identity)
 	seen := make(map[string]bool)
 	files := make([]BatchFile, 0)
@@ -638,7 +655,9 @@ func (r *Runner) BatchFiles(ctx context.Context, identity sandbox.Identity, path
 	return files, nil
 }
 
-// DeleteWorkspace removes the mutable workspace.
+// DeleteWorkspace removes the mutable workspace and frees the identity's UID.
+// Nothing in the workspace survives, so the next request starts from an empty
+// directory with a freshly allocated UID.
 func (r *Runner) DeleteWorkspace(ctx context.Context, identity sandbox.Identity) error {
 	if apiErr := contextErr(ctx); apiErr != nil {
 		return apiErr
@@ -653,7 +672,78 @@ func (r *Runner) DeleteWorkspace(ctx context.Context, identity sandbox.Identity)
 	if err := os.RemoveAll(r.workspace(identity)); err != nil {
 		return sandbox.Internal("remove workspace: " + err.Error())
 	}
+	if err := r.releaseIdentity(key); err != nil {
+		return sandbox.Internal("release identity: " + err.Error())
+	}
 	r.log.Info("workspace deleted", "key", key, "mode", identity.Mode(), "namespace", identity.Namespace, "principal", identity.Principal)
+	return nil
+}
+
+// releaseIdentity drops the persisted mapping so the UID returns to the pool.
+// The caller holds the identity lock, so no command can be running for it.
+// Processes the identity left behind (setsid, nohup) are killed first: a
+// recycled UID must never inherit someone else's daemons.
+func (r *Runner) releaseIdentity(key string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	uid, ok := r.userUID[key]
+	if !ok {
+		return nil
+	}
+	if err := killUIDProcesses(uid); err != nil {
+		// Keep the mapping: reusing this UID while its processes still run
+		// would hand them the next identity's workspace.
+		r.log.Warn("cannot reap identity processes; keeping its UID", "key", key, "uid", uid, "error", err.Error())
+		return nil
+	}
+	if err := r.store.Delete(key); err != nil {
+		return err
+	}
+	delete(r.userUID, key)
+	select {
+	case r.uidPool <- uid:
+	default:
+	}
+	return nil
+}
+
+// Remove deletes one workspace path. It is the escape hatch for a workspace
+// that is over quota: no command can run, so the caller frees space directly.
+func (r *Runner) Remove(ctx context.Context, identity sandbox.Identity, relPath string) error {
+	if apiErr := contextErr(ctx); apiErr != nil {
+		return apiErr
+	}
+	key, apiErr := r.key(identity)
+	if apiErr != nil {
+		return apiErr
+	}
+	if strings.TrimSpace(relPath) == "" {
+		return sandbox.BadRequest("path is required")
+	}
+	workspace := r.workspace(identity)
+	full, err := secureJoin(workspace, relPath)
+	if err != nil {
+		return err
+	}
+	lock := r.lockFor(key)
+	lock.Lock()
+	defer lock.Unlock()
+	info, err := os.Lstat(full)
+	if err != nil {
+		return sandbox.NotFound("path not found: " + relPath)
+	}
+	if info.IsDir() {
+		if filepath.Clean(full) == filepath.Clean(workspace) {
+			return sandbox.BadRequest("use DELETE /v1/workspace to remove the whole workspace")
+		}
+		if err := os.RemoveAll(full); err != nil {
+			return sandbox.Internal("remove path: " + err.Error())
+		}
+		return nil
+	}
+	if err := os.Remove(full); err != nil {
+		return sandbox.Internal("remove path: " + err.Error())
+	}
 	return nil
 }
 
@@ -684,6 +774,9 @@ func (r *Runner) Sweep(ctx context.Context) (int, error) {
 			if removeErr := os.RemoveAll(workspace); removeErr == nil {
 				swept++
 				r.log.Info("workspace expired", "key", key, "idle", time.Since(idle).String())
+				if releaseErr := r.releaseIdentity(key); releaseErr != nil {
+					r.log.Warn("release identity failed", "key", key, "error", releaseErr.Error())
+				}
 			}
 		}
 		lock.Unlock()

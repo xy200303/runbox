@@ -19,6 +19,7 @@ description: Runbox 的 HTTP 接口一览：执行、上传、按路径下载、
 | `POST` | `/v1/files` | 上传单个文件，返回工作区路径 |
 | `POST` | `/v1/files/batch` | 上传多个文件，返回各自路径 |
 | `GET` | `/v1/path?path=out/x` | 按工作区路径下载 |
+| `DELETE` | `/v1/path?path=out/x` | 删除工作区内的一个路径（超配额时的逃生口） |
 | `GET` | `/v1/list?path=out` | 列出工作区目录 |
 | `GET` | `/v1/archive?path=out&path=tmp` | 文件或目录打包成 tar 下载 |
 | `DELETE` | `/v1/workspace` | 删除该身份的工作区 |
@@ -102,6 +103,8 @@ curl -fsS "http://localhost:8099/v1/archive?path=out&path=tmp/step2" \
 
 `/v1/path` 与 `/v1/archive` 都只接受相对路径，`..` 和指向工作区外部的符号链接会被拒绝。
 
+工作区超配额时所有命令都会返回 `409 quota_exceeded`，连 `rm` 也执行不了。此时用 `DELETE /v1/path?path=out` 直接删目录，或 `DELETE /v1/workspace` 重置整个工作区。
+
 ## 列表与清理
 
 ```bash
@@ -125,7 +128,7 @@ curl -fsS -X DELETE http://localhost:8099/v1/workspace \
 | `400` | 身份头缺失、冲突或格式不合法 |
 | `401` | bearer token 缺失或错误 |
 | `404` | 路径不存在，或属于别的身份 |
-| `409` | `busy`（并发已满）或 `quota_exceeded`（工作区超配额） |
+| `409` | `busy`（并发已满）、`timeout`（超时已杀）、`quota_exceeded`（超配额，用 `DELETE /v1/path` 释放）或 `uid_exhausted`（UID 池用尽） |
 | `413` | 请求体、附件或产物超过上限 |
 
 错误响应是 JSON，带 `error` 字段与可读说明；`409` 会区分 `busy` 与 `quota_exceeded`，方便调用方决定是重试还是清理。

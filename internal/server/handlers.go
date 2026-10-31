@@ -124,6 +124,9 @@ func (s *Server) parseExecMultipart(c *gin.Context, identity sandbox.Identity) (
 	}
 	var command string
 	var timeout time.Duration
+	// A duplicate scalar field is how a caller smuggles a second command past
+	// a gateway that only inspects the first one; refuse it outright.
+	seen := map[string]bool{}
 	files := 0
 	for {
 		part, err := reader.NextPart()
@@ -143,8 +146,16 @@ func (s *Server) parseExecMultipart(c *gin.Context, identity sandbox.Identity) (
 			}
 			switch name {
 			case "command":
+				if seen[name] {
+					return "", 0, sandbox.BadRequest("duplicate command field")
+				}
+				seen[name] = true
 				command = value
 			case "timeout_seconds":
+				if seen[name] {
+					return "", 0, sandbox.BadRequest("duplicate timeout_seconds field")
+				}
+				seen[name] = true
 				timeout = parseTimeoutSeconds(value)
 			}
 			continue
@@ -396,6 +407,26 @@ func (s *Server) handleDeleteWorkspace(c *gin.Context) {
 		return
 	}
 	s.metrics.workspaceDeletes.Add(1)
+	writeJSON(c, http.StatusOK, map[string]bool{"deleted": true})
+}
+
+// handleDeletePath removes one workspace path. A workspace over its quota
+// cannot run a cleanup command, so this is the way back under the limit.
+func (s *Server) handleDeletePath(c *gin.Context) {
+	identity, err := s.identity(c)
+	if err != nil {
+		s.fail(c, err)
+		return
+	}
+	path := c.Query("path")
+	if strings.TrimSpace(path) == "" {
+		s.fail(c, sandbox.BadRequest("path query parameter is required"))
+		return
+	}
+	if err := s.runner.Remove(c.Request.Context(), identity, path); err != nil {
+		s.fail(c, err)
+		return
+	}
 	writeJSON(c, http.StatusOK, map[string]bool{"deleted": true})
 }
 

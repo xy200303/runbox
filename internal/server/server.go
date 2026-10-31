@@ -68,6 +68,7 @@ func New(cfg config.Config, r *runner.Runner, logger *slog.Logger) *Server {
 	engine.POST("/v1/files", s.requireAuth(), s.handleUpload)
 	engine.POST("/v1/files/batch", s.requireAuth(), s.handleUploadBatch)
 	engine.GET("/v1/path", s.requireAuth(), s.handlePath)
+	engine.DELETE("/v1/path", s.requireAuth(), s.handleDeletePath)
 	engine.HEAD("/v1/path", s.requireAuth(), s.handlePath)
 	engine.GET("/v1/list", s.requireAuth(), s.handleList)
 	engine.GET("/v1/archive", s.requireAuth(), s.handleBatchDownload)

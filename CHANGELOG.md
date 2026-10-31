@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+Security and operability fixes found by an adversarial test pass.
+
+- The UID pool now defaults to `20000..62000` (was `20000..20100`) and a UID is
+  released when its workspace is deleted or expires. Before this, the 101st
+  distinct identity failed with `uid_exhausted` forever, because neither
+  `DELETE /v1/workspace` nor the retention sweep removed the mapping.
+- Releasing a UID first kills every process still running as that UID, so a
+  recycled UID cannot inherit daemons left behind with `setsid` or `nohup`.
+- `state/` is now `0700` and `runbox.db` (plus `-wal`/`-shm`) is `0600`; the
+  workspace root is `0711`. Sandbox identities could previously read the whole
+  identity table (namespace, principal, UID) and enumerate every identity key.
+- A workspace over its quota could not be cleaned up, because `rm` is itself a
+  command and every command returned `409 quota_exceeded`. New
+  `DELETE /v1/path?path=...` removes one path without running a command, and the
+  `409` message now names both entry points.
+- A command containing a NUL byte returns `400 bad_request` instead of
+  `500 internal`.
+
 ## 0.2.3 — 2026-11-01
 
 - `full` is now built on `toolbox`, so the default image can compile native

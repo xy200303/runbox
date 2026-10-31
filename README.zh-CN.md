@@ -480,7 +480,7 @@ RUNBOX_ROOT/
 | `RUNBOX_QUOTA_BYTES` | `1GiB` | 单工作区配额；超出后拒绝执行。`0` 表示不限。 |
 | `RUNBOX_RETENTION` | `7d` | 工作区闲置保留期。 |
 | `RUNBOX_SWEEP_INTERVAL` | `1h` | 清理任务间隔。 |
-| `RUNBOX_UID_MIN` / `RUNBOX_UID_MAX` | `20000` / `20100` | Linux 隔离使用的 UID 池。 |
+| `RUNBOX_UID_MIN` / `RUNBOX_UID_MAX` | `20000` / `62000` | Linux 隔离使用的 UID 池；删除或过期工作区时 UID 会回收。 |
 | `RUNBOX_DEFAULT_TIMEOUT` | `60s` | 请求未指定时的超时。 |
 | `RUNBOX_MAX_TIMEOUT` | `300s` | 超时上限，超出会被截断。 |
 | `RUNBOX_SHUTDOWN_TIMEOUT` | `30s` | 优雅退出预算。 |

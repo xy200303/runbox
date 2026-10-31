@@ -23,6 +23,9 @@ func isWindows() bool { return runtime.GOOS == "windows" }
 
 func statUID(os.FileInfo) int { return -1 }
 
+// killUIDProcesses has no meaning without per-identity UIDs.
+func killUIDProcesses(int) error { return nil }
+
 func baseEnv(_ string) []string {
 	if runtime.GOOS != "windows" {
 		return []string{

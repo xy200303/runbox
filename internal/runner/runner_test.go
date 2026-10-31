@@ -560,3 +560,103 @@ func TestWorkspaceReplacesSymlinkedSubdir(t *testing.T) {
 		t.Fatal("upload escaped through the symlinked directory")
 	}
 }
+
+func TestWorkspaceRootsAreNotListable(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("directory permissions are only enforced on Linux")
+	}
+	root := t.TempDir()
+	newTestRunnerAt(t, root, nil)
+
+	cases := []struct {
+		path string
+		mode os.FileMode
+	}{
+		{root, 0o755},
+		{filepath.Join(root, "workspaces"), 0o711},
+		{filepath.Join(root, "state"), 0o700},
+		{filepath.Join(root, "state", "runbox.db"), 0o600},
+	}
+	for _, testCase := range cases {
+		info, err := os.Stat(testCase.path)
+		if err != nil {
+			t.Fatalf("%s: %v", testCase.path, err)
+		}
+		if got := info.Mode().Perm(); got != testCase.mode {
+			t.Fatalf("%s mode = %o, want %o", testCase.path, got, testCase.mode)
+		}
+	}
+}
+
+func TestExecRejectsNULByte(t *testing.T) {
+	r := newTestRunner(t, nil)
+	_, err := r.Exec(context.Background(), sandbox.TokenIdentity("nul"), "echo a\x00b", 0)
+	if code := apiCode(t, err); code != "bad_request" {
+		t.Fatalf("code = %q, want bad_request", code)
+	}
+}
+
+func TestDeleteWorkspaceReleasesUID(t *testing.T) {
+	root := t.TempDir()
+	// Two UIDs only: exhausting them is easy to arrange.
+	r := newTestRunnerAt(t, root, func(options *Options) {
+		options.UIDMin = 20000
+		options.UIDMax = 20002
+	})
+	ctx := context.Background()
+	first := sandbox.TokenIdentity("recycle-a")
+	second := sandbox.TokenIdentity("recycle-b")
+	third := sandbox.TokenIdentity("recycle-c")
+
+	for _, identity := range []sandbox.Identity{first, second} {
+		if _, err := r.Exec(ctx, identity, "true", 0); err != nil {
+			t.Fatalf("warm %v: %v", identity, err)
+		}
+	}
+	if _, err := r.Exec(ctx, third, "true", 0); err == nil || apiCode(t, err) != "uid_exhausted" {
+		t.Fatalf("third identity should exhaust the pool, got %v", err)
+	}
+
+	key, err := first.CanonicalKey()
+	if err != nil {
+		t.Fatalf("key: %v", err)
+	}
+	if err := r.DeleteWorkspace(ctx, first); err != nil {
+		t.Fatalf("delete workspace: %v", err)
+	}
+	if _, err := r.store.Get(key); err == nil {
+		t.Fatal("identity row must be removed so the UID can be reused")
+	}
+	if _, err := r.Exec(ctx, third, "true", 0); err != nil {
+		t.Fatalf("freed UID should be reusable: %v", err)
+	}
+}
+
+func TestOpenPathRejectsFIFOWithoutBlocking(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("FIFOs are a POSIX feature")
+	}
+	r := newTestRunner(t, nil)
+	identity := sandbox.TokenIdentity("fifo")
+	if _, err := r.Exec(context.Background(), identity, "mkdir -p out && mkfifo out/pipe", 0); err != nil {
+		t.Fatalf("prepare fifo: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		reader, _, err := r.OpenPath(context.Background(), identity, "out/pipe")
+		if err == nil {
+			reader.Close()
+		}
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("downloading a FIFO must fail")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("OpenPath blocked on a FIFO")
+	}
+}

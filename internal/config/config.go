@@ -68,7 +68,7 @@ func FromEnv(get func(string) string) (Config, error) {
 		SweepInterval:   time.Hour,
 		MaxConcurrency:  2,
 		UIDMin:          20000,
-		UIDMax:          20100,
+		UIDMax:          62000,
 		DefaultTimeout:  sandbox.DefaultTimeout,
 		MaxTimeout:      sandbox.DefaultMaxTimeout,
 		ShutdownTimeout: 30 * time.Second,

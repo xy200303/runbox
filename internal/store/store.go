@@ -6,6 +6,7 @@ package store
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -67,7 +68,23 @@ func Open(path string) (*Store, error) {
 		sqlDB.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
+	// The identity table lists every tenant, so the database and its WAL files
+	// must stay root-only even when the state directory permissions drift.
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		if chmodErr := os.Chmod(path+suffix, 0o600); chmodErr != nil && !os.IsNotExist(chmodErr) {
+			sqlDB.Close()
+			return nil, fmt.Errorf("chmod %s: %w", path+suffix, chmodErr)
+		}
+	}
 	return &Store{db: db}, nil
+}
+
+// Delete removes one identity row, which frees its UID for reuse.
+func (s *Store) Delete(key string) error {
+	if s == nil || s.db == nil {
+		return nil
+	}
+	return s.db.Where("key = ?", key).Delete(&Identity{}).Error
 }
 
 // Close closes the underlying database.
@@ -121,11 +138,6 @@ func (s *Store) Touch(key string) error {
 	return s.db.Model(&Identity{}).
 		Where("key = ?", key).
 		Update("last_seen_at", time.Now().UTC()).Error
-}
-
-// Delete removes one identity row. Files are not touched.
-func (s *Store) Delete(key string) error {
-	return s.db.Where("key = ?", key).Delete(&Identity{}).Error
 }
 
 // ErrNotFound is returned by Get for an unknown identity.

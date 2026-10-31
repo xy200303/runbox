@@ -550,7 +550,7 @@ Durations accept `30s`, `15m`, `7d` or bare seconds; sizes accept `20MiB`, `20MB
 | `RUNBOX_QUOTA_BYTES` | `1GiB` | Per-workspace quota; execution is refused above it. `0` = unlimited. |
 | `RUNBOX_RETENTION` | `7d` | Idle workspace retention. |
 | `RUNBOX_SWEEP_INTERVAL` | `1h` | Janitor interval. |
-| `RUNBOX_UID_MIN` / `RUNBOX_UID_MAX` | `20000` / `20100` | UID pool used for Linux isolation. |
+| `RUNBOX_UID_MIN` / `RUNBOX_UID_MAX` | `20000` / `62000` | UID pool used for Linux isolation; a UID returns to the pool when its workspace is deleted or expires. |
 | `RUNBOX_DEFAULT_TIMEOUT` | `60s` | Timeout when the request omits one. |
 | `RUNBOX_MAX_TIMEOUT` | `300s` | Upper bound; longer requests are clamped. |
 | `RUNBOX_SHUTDOWN_TIMEOUT` | `30s` | Graceful shutdown budget. |

@@ -7,7 +7,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
+	"time"
 )
 
 // In the container the runner starts as root so it can hand each identity its
@@ -59,6 +63,59 @@ func killProcessTree(pid int) error {
 		return nil
 	}
 	return fmt.Errorf("kill process group %d: %v; kill process: %v", pid, groupErr, processErr)
+}
+
+// killUIDProcesses kills every process owned by uid. A recycled UID must not
+// inherit daemons a previous identity left behind with setsid or nohup.
+func killUIDProcesses(uid int) error {
+	if uid <= 0 {
+		return nil
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		pids := pidsForUID(uid)
+		if len(pids) == 0 {
+			return nil
+		}
+		for _, pid := range pids {
+			if err := syscall.Kill(pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+				return fmt.Errorf("kill pid %d: %w", pid, err)
+			}
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("%d process(es) still running as uid %d", len(pids), uid)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func pidsForUID(uid int) []int {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return nil
+	}
+	var pids []int
+	for _, entry := range entries {
+		pid, convErr := strconv.Atoi(entry.Name())
+		if convErr != nil {
+			continue
+		}
+		data, readErr := os.ReadFile(filepath.Join("/proc", entry.Name(), "status"))
+		if readErr != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			if !strings.HasPrefix(line, "Uid:") {
+				continue
+			}
+			fields := strings.Fields(line)
+			if len(fields) > 1 && fields[1] == strconv.Itoa(uid) {
+				pids = append(pids, pid)
+			}
+			break
+		}
+	}
+	return pids
 }
 
 // missingCapabilities reports the Linux capabilities the runner expects in

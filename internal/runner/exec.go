@@ -26,6 +26,9 @@ func (r *Runner) Exec(ctx context.Context, identity sandbox.Identity, command st
 	if command == "" {
 		return nil, sandbox.BadRequest("command is required")
 	}
+	if strings.ContainsRune(command, 0) {
+		return nil, sandbox.BadRequest("command contains a NUL byte")
+	}
 	if int64(len(command)) > r.opts.MaxCommandBytes {
 		return nil, sandbox.BadRequest(fmt.Sprintf("command exceeds the %d byte limit", r.opts.MaxCommandBytes))
 	}
@@ -52,7 +55,7 @@ func (r *Runner) Exec(ctx context.Context, identity sandbox.Identity, command st
 	if r.opts.QuotaBytes > 0 {
 		if size, sizeErr := dirSize(workspace); sizeErr == nil && size > r.opts.QuotaBytes {
 			return nil, sandbox.Conflict("quota_exceeded",
-				fmt.Sprintf("workspace exceeds the %d byte quota; clean out/ or old files", r.opts.QuotaBytes))
+				fmt.Sprintf("workspace exceeds the %d byte quota; free space with DELETE /v1/path?path=... or DELETE /v1/workspace", r.opts.QuotaBytes))
 		}
 	}
 	if drop {

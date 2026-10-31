@@ -58,8 +58,8 @@ All errors are JSON:
 | 408 | `canceled` | The client canceled the request. |
 | 409 | `busy` | The runner is at its concurrency limit. |
 | 409 | `timeout` | The command exceeded its timeout and was killed. |
-| 409 | `quota_exceeded` | Workspace quota exceeded. |
-| 409 | `uid_exhausted` | No free UID in the configured range; raise `RUNBOX_UID_MAX` or remove idle workspaces. |
+| 409 | `quota_exceeded` | Workspace quota exceeded; free space with `DELETE /v1/path?path=...` or `DELETE /v1/workspace`. |
+| 409 | `uid_exhausted` | No free UID in the configured range; the pool spans `RUNBOX_UID_MIN`..`RUNBOX_UID_MAX` and a UID returns when its workspace is deleted or expires. |
 | 413 | `too_large` | Upload or request body exceeds the limit. |
 | 415 | `unsupported_media_type` | Unsupported request content type. |
 | 500 | `internal` | Unexpected failure. |
@@ -269,6 +269,24 @@ The response is `application/octet-stream` with a `Content-Disposition`
 header. Range and HEAD requests are supported: send `Range: bytes=0-1023` to
 receive `206 Partial Content`, or use `HEAD` to fetch headers without the body.
 
+## DELETE /v1/path?path=out/report.csv
+
+Remove one file or directory from the caller's workspace without running a
+command. This is the way out of a workspace that is over its quota, because an
+over-quota workspace refuses every command, including `rm`:
+
+```bash
+curl -fsS -X DELETE -H "Authorization: Bearer $KEY" \
+  -H "X-Runbox-Identity: team-a.user-42" \
+  "http://localhost:8099/v1/path?path=out"
+```
+
+- accepts the same normalized paths as `GET`; `..` and absolute paths are
+  rejected;
+- the workspace root itself is refused (`400`), use `DELETE /v1/workspace`;
+- another identity's path returns `404`, exactly like `GET`;
+- returns `{"deleted":true}`.
+
 ## GET /v1/list?path=out
 
 List one directory level. `path` is optional; an empty value lists the
@@ -306,8 +324,9 @@ batch download path for intermediate files; no extra identifiers are required.
 
 ## DELETE /v1/workspace
 
-Remove the caller's mutable workspace. The workspace is recreated on the next
-call.
+Remove the caller's mutable workspace and release its UID. Any process the
+identity left behind is killed first, so the recycled UID cannot inherit it.
+The identity is recreated with a fresh UID on the next call.
 
 ```json
 {"deleted": true}
