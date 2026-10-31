@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.1 — 2026-10-31
+
+Security patch release.
+
+- Build with Go 1.26.10 and upgrade `golang.org/x/net`, `x/crypto`, `x/sys` and
+  `quic-go` to versions that fix the advisories reported by `govulncheck`
+  (GO-2026-6605 through GO-2026-6809 and the HTTP/3 QPACK issues).
+- Add `security.yml`: `govulncheck`, `npm audit` and a Trivy critical scan on
+  push and weekly; add Dependabot for Go, npm, pip, Actions and Docker.
+- Container publishing now emits SBOM and provenance attestations.
+
 ## 0.2.0 — 2026-10-31
 
 - Removed the immutable `keep/` archive, `POST /v1/files/{id}/keep`,
