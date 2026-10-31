@@ -7,6 +7,10 @@ coverage.out
 *.md
 docs
 examples
+sdk/python
+sdk/node
+website
+node_modules
 docker-compose.yml
 Dockerfile
 __pycache__
