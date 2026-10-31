@@ -203,6 +203,41 @@ For a small number of strong tenants, give each its own Runbox container and
 volume. Isolation becomes the container boundary, and a noisy tenant cannot
 see or starve another. The cost is operational: one service and volume each.
 
+## CVEs and patching
+
+Container security is four layers. Patching one layer does not fix the others.
+
+| Layer | Who owns it | How it gets fixed |
+|---|---|---|
+| Host kernel | The machine operator | Kernel updates, reboot/livepatch, hypervisor patching. Containers share the kernel; an image update cannot fix a kernel CVE. |
+| Container runtime | The machine operator | Update Docker/containerd/runc, or the Kubernetes node runtime. Runtime escapes are usually host-side bugs. |
+| Image packages | Runbox image maintainers | Rebuild from the current `debian:bookworm-slim` and Debian security updates; do not run a months-old image. |
+| Go/npm/Python dependencies | Upstream projects | `govulncheck`, `npm audit`, Dependabot, and regular upgrades. |
+
+`debian:bookworm-slim` is a moving tag: a rebuild picks up Debian point releases
+and security fixes. The CI build uses the current base; production should rebuild
+on a schedule (for example weekly) and after Debian security advisories, not only
+when application code changes.
+
+Runbox does not claim a zero-CVE image. No image can. The workflow is:
+
+1. `security.yml` runs `govulncheck`, `npm audit`, and a Trivy image scan for
+   high/critical fixable issues on pushes and weekly.
+2. Dependabot proposes Go, npm, Python and GitHub Actions updates.
+3. Image scans report the package and CVE; triage `ignore-unfixed` findings
+   separately. Rebuild after the base or a dependency is fixed.
+4. `docker.yml` publishes provenance and SBOM attestations with tagged images.
+5. The host operator patches the kernel and container runtime; for hostile
+   tenants, run under gVisor or a microVM, which also narrows the host kernel
+   surface.
+
+The `full` image includes LibreOffice, a large parser with a correspondingly
+large CVE surface. For untrusted documents, prefer the `minimal` image plus a
+dedicated converter service, or run the full image under gVisor. Keep the
+read-only root, dropped capabilities, `no-new-privileges`, seccomp defaults and
+egress policy in place; they reduce the impact of a userspace CVE but do not
+replace patching.
+
 ## Reporting
 
 See [SECURITY.md](../SECURITY.md). Do not open a public issue for a
