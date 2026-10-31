@@ -5,7 +5,7 @@ import CodeTabs from './components/CodeTabs.vue'
 const stats = [
   { value: '1 个容器', label: '承载全部身份', note: '不为每个用户新建运行时' },
   { value: '1 个卷', label: '工作区与状态', note: 'workspaces/ 与 SQLite 同卷' },
-  { value: '~585 MB', label: 'minimal 镜像解包', note: 'full 约 1.4 GB，toolbox 再加约 300 MB' },
+  { value: '~170 MB', label: 'minimal 镜像下载', note: 'full 约 600 MB，toolbox 约 285 MB' },
   { value: '0', label: '外部数据库与编排器', note: 'SQLite 内嵌在 runner 里' }
 ]
 
@@ -148,9 +148,9 @@ const sdks = [
 ]
 
 const images = [
-  { tag: 'latest-minimal', size: '约 585 MB', use: '代码、文本、PDF 抽取' },
-  { tag: 'latest', size: '约 1.4 GB', use: 'Office 文档、表格、pandas/numpy' },
-  { tag: 'latest-toolbox', size: 'minimal + 约 300 MB', use: 'pip/npm 编译原生扩展' }
+  { tag: 'latest-minimal', size: '约 170 MB', use: '代码、文本、PDF 抽取' },
+  { tag: 'latest', size: '约 600 MB', use: 'Office 文档、表格、pandas/numpy、原生扩展编译' },
+  { tag: 'latest-toolbox', size: '约 285 MB', use: '只编译，不需要 Office' }
 ]
 
 const faqs = [
@@ -479,7 +479,7 @@ read_only: true</code></pre>
             <thead>
               <tr>
                 <th>镜像</th>
-                <th>解包后</th>
+                <th>下载体积</th>
                 <th>适合</th>
               </tr>
             </thead>

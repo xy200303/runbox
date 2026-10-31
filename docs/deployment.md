@@ -4,13 +4,14 @@
 
 | Target | Contents | Rough size | Use |
 |---|---|---|---|
-| `full` (default) | Debian 12 slim, agent CLI, Python/Node, poppler, `build-essential`, LibreOffice, CJK fonts, data libraries | ~1.4 GB unpacked | Document work and native builds |
-| `minimal` | Debian 12 slim, agent CLI, Python/Node, poppler; no LibreOffice/CJK/data libraries | ~585 MB unpacked | Code/text workloads |
-| `toolbox` | minimal plus `build-essential` and development headers | minimal + ~300 MB | Packages that compile native extensions |
+| `full` (default) | Debian 12 slim, agent CLI, Python/Node, poppler, `build-essential`, LibreOffice, CJK fonts, data libraries | ~600 MB download | Document work and native builds |
+| `minimal` | Debian 12 slim, agent CLI, Python/Node, poppler; no LibreOffice/CJK/data libraries | ~170 MB download | Code/text workloads |
+| `toolbox` | minimal plus `build-essential` and development headers | ~285 MB download | Compilation only, no LibreOffice |
 
-The sizes are unpacked container footprints measured with `du -sh /`; compressed
-registry layers are smaller. `full` is the default because document conversion
-is the common agent workload; use `minimal` when size matters.
+The sizes are amd64 download sizes from the published registry manifests;
+unpacked footprints are roughly three to four times larger. `full` is the
+default because document conversion is the common agent workload; use
+`minimal` when size matters.
 
 ### Why Debian slim
 
@@ -31,8 +32,8 @@ agent sandbox:
 Ubuntu is a close alternative (newer packages, also Debian-derived); Alpine is
 smaller but musl breaks too many Python/Node binaries, and distroless/scratch
 have no shell or apt, which is the opposite of an agent sandbox. The image size
-is dominated by the tools, not the base: `minimal` is ~585 MB unpacked and
-`full` ~1.4 GB.
+is dominated by the tools, not the base: `minimal` downloads ~170 MB and
+`full` ~600 MB.
 
 ```bash
 docker build -t runbox:latest .
@@ -239,7 +240,7 @@ does not impose filesystem quotas; both belong to the layer that owns the host.
 |---|---|
 | CPU | Each execution is one shell plus its children. LibreOffice and pandas are the heavy paths. `2` CPUs with concurrency `2` is a reasonable start. |
 | Memory | Container limit `2 GiB` handles two small Python jobs or one LibreOffice conversion with headroom. Raise it before raising concurrency. |
-| Disk | Image ~1.4 GB unpacked (full) or ~585 MB (minimal). Workspace volume: `quota * active identities`. |
+| Disk | Image ~600 MB download (full) or ~170 MB (minimal), roughly 3–4× that unpacked. Workspace volume: `quota * active identities`. |
 | pids | `256` stops fork bombs early while allowing LibreOffice helper processes. |
 | Concurrency | Start at `2`. Watch `busy` responses and CPU throttling; scale out with more replicas rather than raising it indefinitely. |
 

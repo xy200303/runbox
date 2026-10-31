@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- `full` is now built on `toolbox`, so the default image can compile native
+  Python and Node extensions. Its amd64 download grows from ~485 MB to ~600 MB.
+- Image sizes in the docs are now the published download size rather than an
+  earlier `du` measurement: `minimal` ~170 MB, `toolbox` ~285 MB, `full` ~600 MB.
+
 ## 0.2.2 — 2026-10-31
 
 - Renamed `RUNBOX_MAX_INPUTS` to `RUNBOX_MAX_ATTACHMENTS` and the capabilities

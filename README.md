@@ -92,11 +92,11 @@ Choose Runbox when you want one container next to your application, semi-trusted
 Three variants share the same API and run as root inside the container so they
 can assign per-identity UIDs:
 
-| Variant | Pull | Unpacked | Use |
+| Variant | Pull | Download | Use |
 |---|---|---|---|
-| `full` | `docker pull ghcr.io/xy200303/runbox:latest` | ~1.4 GB | Office documents, spreadsheets, pandas/numpy |
-| `minimal` | `docker pull ghcr.io/xy200303/runbox:latest-minimal` | ~585 MB | Code, text, PDF extraction |
-| `toolbox` | `docker pull ghcr.io/xy200303/runbox:latest-toolbox` | minimal + ~300 MB | Packages that compile native extensions |
+| `full` | `docker pull ghcr.io/xy200303/runbox:latest` | ~600 MB | Office documents, spreadsheets, pandas/numpy, native builds |
+| `minimal` | `docker pull ghcr.io/xy200303/runbox:latest-minimal` | ~170 MB | Code, text, PDF extraction |
+| `toolbox` | `docker pull ghcr.io/xy200303/runbox:latest-toolbox` | ~285 MB | Compiling without the Office layer |
 
 Versioned tags follow the release, for example `v0.2.2`, `v0.2.2-minimal` and
 `v0.2.2-toolbox`.
@@ -452,9 +452,10 @@ Durations accept `30s`, `15m`, `7d` or bare seconds; sizes accept `20MiB`, `20MB
 | Node `xlsx`, `csv-parse`, `dayjs` | yes | no | no |
 | `build-essential` and development headers | yes | no | yes |
 
-The `minimal` image is about 585 MB unpacked; `full` adds LibreOffice and data
-libraries and is about 1.4 GB unpacked. Pick `minimal` for code/text workloads
-and `toolbox` when packages need to compile native extensions.
+Sizes above are the amd64 download size; unpacking takes roughly three to four
+times that on disk (`docker images` reports about 700 MB for `minimal`). `full`
+now includes everything in `toolbox`, so pick `minimal` for code/text workloads
+and `toolbox` only when you want the compiler without the Office layer.
 
 Build arguments for restricted networks: `GOPROXY`, `APT_MIRROR`, `PIP_INDEX`, `NPM_REGISTRY`. See [docs/deployment.md](docs/deployment.md).
 

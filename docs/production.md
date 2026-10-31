@@ -59,7 +59,7 @@ Measure with your real commands; these are starting values, not guarantees.
 | Workspace quota | 1 GiB per identity | Includes installs and caches. |
 | Retention | 7 days idle | `RUNBOX_RETENTION`. |
 | Pids limit | 256 | Stops fork bombs while allowing LibreOffice helpers. |
-| Image | full or minimal | Minimal is ~585 MB unpacked; full is ~1.4 GB and adds LibreOffice/data libraries. |
+| Image | full or minimal | full downloads ~600 MB and includes build tools, LibreOffice and the data stack; minimal downloads ~170 MB. |
 
 Suggested initial SLOs for an internal deployment:
 

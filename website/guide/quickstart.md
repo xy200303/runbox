@@ -32,11 +32,11 @@ curl -fsS http://localhost:8099/health
 
 镜像有三档，接口完全一致，只换 tag：
 
-| Tag | 解包后 | 适合 |
+| Tag | 下载体积 | 适合 |
 | --- | --- | --- |
-| `latest-minimal` | 约 585 MB | 代码、文本、PDF 抽取 |
-| `latest` | 约 1.4 GB | Office 文档、表格、pandas/numpy |
-| `latest-toolbox` | minimal + 约 300 MB | pip/npm 编译原生扩展 |
+| `latest-minimal` | 约 170 MB 下载 | 代码、文本、PDF 抽取 |
+| `latest` | 约 600 MB 下载 | Office 文档、表格、pandas/numpy、原生扩展编译 |
+| `latest-toolbox` | 约 285 MB 下载 | 只编译，不需要 Office |
 
 ## 2. 跑一条命令
 
