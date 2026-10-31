@@ -2,7 +2,7 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 GO ?= go
 BINARY := bin/runboxd$(shell $(GO) env GOEXE)
 
-.PHONY: build test test-race fuzz vet fmt check run docker docker-minimal clean
+.PHONY: build test test-race fuzz vet fmt fmt-check check run docker docker-minimal clean
 
 build:
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o $(BINARY) ./cmd/runboxd
@@ -22,7 +22,10 @@ vet:
 fmt:
 	gofmt -w .
 
-check: vet test
+fmt-check:
+	test -z "$$(gofmt -l .)"
+
+check: fmt-check vet test-race
 
 # Local development: no API key, data under ./.runbox. Never expose this mode.
 run: build

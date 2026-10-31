@@ -17,10 +17,10 @@ security-relevant check.
 ## Before opening a pull request
 
 ```bash
-gofmt -w .
-go vet ./...
-go test ./...
+make check
 ```
+
+That runs a gofmt check, `go vet ./...` and `go test -race ./...`.
 
 Security-sensitive paths have tests; please add one when you change:
 
@@ -46,10 +46,9 @@ Security-sensitive paths have tests; please add one when you change:
 
 Short imperative subject, then a body explaining the why. No generated files.
 
-## Publishing
+## Releases
 
-The module path `github.com/xy200303/runbox` is a placeholder so the project
-builds before it has a home. Before publishing under your own organisation,
-replace it in `go.mod`, all imports, the examples and the docs. Nothing else
-depends on the path.
+1. Update `CHANGELOG.md`.
+2. Tag the release (`vX.Y.Z`) and push the tag.
+3. Build images with `make docker docker-minimal`.
 
