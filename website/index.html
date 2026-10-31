@@ -143,31 +143,36 @@
           </article>
           <article class="feature">
             <span class="feature-no">04</span>
+            <h3>Agent 常用工具链</h3>
+            <p>预装 git、curl/wget、jq、ripgrep、fd、bat、tree、file、sqlite3、less、nano、lsof 与标准 GNU 工具。</p>
+          </article>
+          <article class="feature">
+            <span class="feature-no">05</span>
             <h3>大文件流式传输</h3>
             <p>上传边读边落盘，不把整个请求体读进内存；下载支持 Range 和 HEAD，适合大产物。</p>
           </article>
           <article class="feature">
-            <span class="feature-no">05</span>
+            <span class="feature-no">06</span>
             <h3>批量与路径下载</h3>
             <p>批量上传多个文件；按相对路径下载任意中间文件，或把目录打成 tar 一次取回，不需要为每个文件生成 ID。</p>
           </article>
           <article class="feature">
-            <span class="feature-no">06</span>
+            <span class="feature-no">07</span>
             <h3>有界执行</h3>
             <p>命令长度、输入数量、stdout、产物数量与大小、工作区配额、超时、并发和保留期都有边界。</p>
           </article>
           <article class="feature">
-            <span class="feature-no">07</span>
+            <span class="feature-no">08</span>
             <h3>SQLite 身份状态</h3>
             <p>身份、UID 和元数据写入一个 SQLite 文件，随数据卷持久化；不跟踪每个文件。</p>
           </article>
           <article class="feature">
-            <span class="feature-no">08</span>
+            <span class="feature-no">09</span>
             <h3>默认 fail-closed</h3>
             <p>只读根文件系统、丢弃能力、no-new-privileges、tini 作为 PID 1；缺少所需能力时拒绝启动。</p>
           </article>
           <article class="feature">
-            <span class="feature-no">09</span>
+            <span class="feature-no">10</span>
             <h3>可观测</h3>
             <p>/ready 就绪检查、/metrics Prometheus 指标、结构化文本或 JSON 请求日志。</p>
           </article>
@@ -319,6 +324,7 @@ console.log((await client.exec('echo hello')).stdout)</code></pre>
   -e RUNBOX_API_KEY=... \
   -v runbox-data:/workspace \
   ghcr.io/xy200303/runbox:latest</code></pre>
+            <p class="tab-note"><code>latest-minimal</code> 解包后约 585MB；<code>full</code> 约 1.4GB，<code>toolbox</code> 带编译工具链。</p>
           </article>
           <article class="panel">
             <h3>默认安全姿态</h3>

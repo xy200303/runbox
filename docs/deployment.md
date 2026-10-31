@@ -4,8 +4,13 @@
 
 | Target | Contents | Rough size | Use |
 |---|---|---|---|
-| `full` (default) | Python, Node, poppler, git, LibreOffice, CJK fonts, data libraries | ~500 MB | Document and spreadsheet work |
-| `minimal` | Python, Node, poppler, git; no LibreOffice, no CJK fonts, no Python data libraries | ~150 MB | Code/text workloads |
+| `full` (default) | Debian 12 slim, agent CLI, Python/Node, poppler, LibreOffice, CJK fonts, data libraries | ~1.4 GB unpacked | Document and spreadsheet work |
+| `minimal` | Debian 12 slim, agent CLI, Python/Node, poppler; no LibreOffice/CJK/data libraries | ~585 MB unpacked | Code/text workloads |
+| `toolbox` | minimal plus `build-essential` and development headers | minimal + ~300 MB | Packages that compile native extensions |
+
+The sizes are unpacked container footprints measured with `du -sh /`; compressed
+registry layers are smaller. `full` is the default because document conversion
+is the common agent workload; use `minimal` when size matters.
 
 ```bash
 docker build -t runbox:latest .
@@ -196,7 +201,7 @@ spec:
 |---|---|
 | CPU | Each execution is one shell plus its children. LibreOffice and pandas are the heavy paths. `2` CPUs with concurrency `2` is a reasonable start. |
 | Memory | Container limit `2 GiB` handles two small Python jobs or one LibreOffice conversion with headroom. Raise it before raising concurrency. |
-| Disk | Image ~500 MB (full). Workspace volume: `quota * active identities`. |
+| Disk | Image ~1.4 GB unpacked (full) or ~585 MB (minimal). Workspace volume: `quota * active identities`. |
 | pids | `256` stops fork bombs early while allowing LibreOffice helper processes. |
 | Concurrency | Start at `2`. Watch `busy` responses and CPU throttling; scale out with more replicas rather than raising it indefinitely. |
 

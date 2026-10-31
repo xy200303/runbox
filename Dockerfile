@@ -1,14 +1,20 @@
-# Two runtime images:
-#   docker build --target minimal .   Python + Node + poppler, no LibreOffice
-#   docker build .                    default: adds LibreOffice and data libraries
+# Runtime images, in increasing size:
+#   minimal  Debian 12 slim + agent CLI toolbox + Python/Node (no LibreOffice)
+#   full     minimal + LibreOffice, CJK fonts and common data libraries
+#   toolbox  minimal + build-essential and development headers
+#
+# Debian slim keeps the base small and apt predictable, while still giving an
+# agent the usual Debian/Ubuntu layout: bash, apt, /usr/bin, Python, Node and
+# the standard GNU tools.
 #
 # The container intentionally runs as root. It needs to hand each sandbox
 # identity a dedicated UID and chown that identity's workspace. The compose
 # file drops every capability except the ownership ones and KILL (which lets a
-# timeout terminate a command running as another UID). Both runtime images use
-# tini as PID 1 so killed command trees are reaped.
+# timeout terminate a command running as another UID). All images use tini as
+# PID 1 so killed command trees are reaped.
 
 ARG GO_VERSION=1.26.5
+ARG DEBIAN_VERSION=bookworm-slim
 
 FROM golang:${GO_VERSION}-alpine AS build
 ARG GOPROXY=https://proxy.golang.org,direct
@@ -20,9 +26,9 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/runboxd ./cmd/runboxd
 
-# Tiny init used as PID 1 in the runtime images. It forwards signals and reaps
-# the orphaned children of a command tree killed on timeout.
-FROM debian:bookworm-slim AS tini
+# Tiny init used as PID 1. It forwards signals and reaps the orphaned children
+# of a command tree killed on timeout.
+FROM debian:${DEBIAN_VERSION} AS tini
 ARG APT_MIRROR=deb.debian.org
 RUN if [ "${APT_MIRROR}" != "deb.debian.org" ]; then \
       sed -i "s|deb.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources; \
@@ -31,7 +37,7 @@ RUN if [ "${APT_MIRROR}" != "deb.debian.org" ]; then \
  && apt-get install -y --no-install-recommends tini \
  && rm -rf /var/lib/apt/lists/*
 
-FROM debian:bookworm-slim AS runtime
+FROM debian:${DEBIAN_VERSION} AS runtime
 ARG APT_MIRROR=deb.debian.org
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
@@ -43,8 +49,11 @@ RUN if [ "${APT_MIRROR}" != "deb.debian.org" ]; then \
     fi \
  && apt-get update \
  && apt-get install -y --no-install-recommends \
-      ca-certificates curl git tzdata procps util-linux unzip zip \
+      ca-certificates curl wget git openssh-client jq ripgrep fd-find bat tree file less nano \
+      sqlite3 unzip zip xz-utils tar gzip procps psmisc util-linux iproute2 lsof tzdata \
       python3 python3-pip python3-venv nodejs npm poppler-utils fonts-dejavu-core \
+ && ln -s /usr/bin/fdfind /usr/local/bin/fd \
+ && ln -s /usr/bin/batcat /usr/local/bin/bat \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/runboxd /usr/local/bin/runboxd
 RUN mkdir -p /workspace
@@ -54,14 +63,24 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD curl -fsS http://127.0.0.1:8099/ready || exit 1
 ENTRYPOINT ["/usr/local/bin/runboxd"]
 
-# Smaller image for text/code workloads that do not need office conversion.
+# Smallest useful image: code, text, data and document extraction without
+# LibreOffice or the heavier Python data stack.
 FROM runtime AS minimal
 COPY --from=tini /usr/bin/tini /usr/local/bin/tini
 ENTRYPOINT ["/usr/local/bin/tini", "--", "/usr/local/bin/runboxd"]
 
-# Default image. Adds LibreOffice, CJK fonts and the common document/data
+# Optional image for packages that compile native extensions. It is kept out of
+# minimal/full so the default images stay small.
+FROM minimal AS toolbox
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      build-essential python3-dev libpq-dev libxml2-dev libxslt1-dev \
+      libssl-dev libffi-dev zlib1g-dev libjpeg-dev libmagic-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+# Default image. Adds LibreOffice, CJK fonts and common document/data
 # libraries used by agent sandboxes.
-FROM runtime AS full
+FROM minimal AS full
 ARG PIP_INDEX=https://pypi.org/simple
 ARG NPM_REGISTRY=https://registry.npmjs.org
 ENV PIP_INDEX_URL=${PIP_INDEX} NPM_CONFIG_REGISTRY=${NPM_REGISTRY}
@@ -72,7 +91,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 RUN pip3 install --no-cache-dir --break-system-packages --timeout 120 --retries 5 \
       openpyxl xlsxwriter pandas numpy python-docx python-pptx pypdf pdfplumber \
-      pillow python-dateutil chardet tabulate markdown beautifulsoup4 lxml
-RUN npm install -g --silent --fetch-retries=5 xlsx csv-parse dayjs
-COPY --from=tini /usr/bin/tini /usr/local/bin/tini
-ENTRYPOINT ["/usr/local/bin/tini", "--", "/usr/local/bin/runboxd"]
+      pillow python-dateutil chardet tabulate markdown beautifulsoup4 lxml \
+ && npm install -g --silent --fetch-retries=5 xlsx csv-parse dayjs \
+ && npm cache clean --force
+

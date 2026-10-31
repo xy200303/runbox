@@ -75,15 +75,16 @@ Runbox 采用 **dify-sandbox 的形态**：一个长期运行的容器，承载�
 |---|---|
 | **单机优先** | 为单台服务器设计：不需要调度器、控制面或外部数据库。SQLite 和工作区都在同一个数据卷里。 |
 | **单容器、多身份** | HTTP runner 与执行环境共处一个长期运行的容器。每个身份用自己的 UID；同一身份的调用串行，不同身份可并发。 |
-| **按身份隔离文件** | 私有工作区、工作区配额、符号链接安全的路径解析。文件按相对路径或 file ID 下载，持久化由调用方负责。 |
+| **按身份隔离文件** | 私有工作区、工作区配额、符号链接安全的路径解析。文件按工作区相对路径下载，持久化由调用方负责。 |
 | **工作区可持久化** | 安装过的包和中间文件跨调用保留。`HOME`、XDG 目录、pip/npm 前缀都在工作区内，并计入配额。 |
-| **持久化由调用方负责** | 执行期间写入 `out/` 的文件以 file ID 返回，也可以按路径下载。Runbox 不保留第二份长期副本；需要就下载后自行存储。 |
+| **持久化由调用方负责** | 执行期间写入 `out/` 的文件带工作区路径返回，可直接下载。Runbox 不保留第二份长期副本；需要就下载后自行存储。 |
 | **所有资源都有边界** | 上传大小、命令长度、输入数量、stdout（保留首尾）、产物数量与大小、工作区配额、超时、并发和保留期。 |
-| **文件是一等公民** | 上传、带输入执行、列目录、按不透明 ID 或工作区路径下载、删除。带附件走流式 multipart，普通调用走 JSON。 |
+| **文件是一等公民** | 上传、执行、列目录、按工作区路径下载、删除。带附件走流式 multipart，命令直接用相对路径引用文件。 |
 | **大文件** | 上传边读边落盘，不把整个请求体读进内存；下载支持 `Range` 和 `HEAD`。 |
-| **批量与路径** | 一次上传多个文件；按相对路径下载任意中间文件，或把目录打成 tar 一次取回。中间文件不需要 file ID。 |
+| **批量与路径** | 一次上传多个文件；按相对路径下载任意中间文件，或把目录打成 tar 一次取回。中间文件不需要额外标识。 |
 | **默认 fail-closed** | 只读根文件系统、丢弃能力、`no-new-privileges`、tini 作为 PID 1。以 root 启动却缺少所需能力时拒绝启动。 |
 | **自带可观测性** | `/ready` 就绪检查、`/metrics` Prometheus 指标、文本或 JSON 结构化日志。 |
+| **Agent 常用工具链** | 预装 `git`、`curl`/`wget`、`jq`、`ripgrep`、`fd`、`bat`、`tree`、`file`、`sqlite3`、`less`、`nano`、`lsof` 和标准 GNU 工具。 |
 | **小到可以通读** | HTTP 层使用 Gin，SDK 保持仅标准库，运维面很小。 |
 
 ## 快速开始
@@ -140,7 +141,7 @@ curl -fsS http://localhost:8099/v1/exec \
   -d '{"command":"mkdir -p out && echo hello > out/report.txt"}'
 ```
 
-响应里会返回 `out/report.txt` 的 `file_id`。用 `GET /v1/files/{id}` 下载，或用 `GET /v1/path?path=out/report.txt` 按路径下载。
+响应里会列出 `out/report.txt` 的相对路径。用 `GET /v1/path?path=out/report.txt` 下载。
 
 ### 4. 或从源码运行
 
@@ -187,7 +188,7 @@ for _, file := range result.Files {
     if err != nil {
         return err
     }
-    if _, err := client.DownloadTo(context.Background(), file.FileID, out); err != nil {
+    if _, err := client.DownloadPathTo(context.Background(), sandbox.Identity{}, file.Path, out); err != nil {
         out.Close()
         return err
     }
@@ -264,7 +265,7 @@ await client.downloadArchive(['out'], 'artifacts.tar')
 - namespace 和 principal 各为 1–128 个字符，字符集 `[A-Za-z0-9._-]`。
 - 两种形式都会规范化为一个 canonical SHA-256 key，存储路径使用该 key。
 - 原始 token 不落盘；scoped 的 namespace/principal 和 UID 分配保存在 `state/runbox.db` 的 `identities` 表中。
-- file ID 绑定所属身份；访问其他身份的 file ID 返回 `403`。
+- 路径以该身份工作区为根解析；其他身份看到自己的目录，或返回 `404`。
 
 鉴权使用 `Authorization: Bearer <RUNBOX_API_KEY>`。`/health` 和 `/ready` 不鉴权，其余接口都需要 Bearer token。
 
@@ -277,9 +278,8 @@ await client.downloadArchive(['out'], 'artifacts.tar')
 | GET | `/metrics` | Prometheus 指标（需鉴权） |
 | GET | `/v1/capabilities` | 限额与检测到的工具 |
 | POST | `/v1/exec` | 执行命令（JSON 或 multipart） |
-| POST | `/v1/files` | 上传单个文件 |
-| POST | `/v1/files/batch` | 一次上传多个文件 |
-| GET | `/v1/files/{id}` | 按 ID 下载 |
+| POST | `/v1/files` | 上传单个文件，返回路径 |
+| POST | `/v1/files/batch` | 一次上传多个文件，返回路径 |
 | GET | `/v1/path?path=out/x` | 按工作区路径下载 |
 | GET | `/v1/list?path=out` | 列工作区目录 |
 | GET | `/v1/archive?path=out&path=tmp` | 按 tar 归档批量下载文件或目录 |
@@ -312,7 +312,7 @@ RUNBOX_ROOT/
 
 - 命令在独立进程组、以该身份的 UID 执行；超时只杀进程组，不动容器。
 - stdout 使用首尾有界缓冲，命令打印几个 GB 也不会撑爆内存。
-- 执行期间写入 `out/` 的文件以 file ID 返回，ID 指向工作区。按 file ID 或相对路径下载；Runbox 不保留第二份副本。
+- 执行期间写入 `out/` 的文件带工作区相对路径返回。按路径下载；Runbox 不保留第二份副本。
 - 后台清理任务删除超过保留期未活动的工作区。
 - API Key 常量时间比较；身份只校验、不“净化”——净化会把不同身份映射到同一个工作区。
 
@@ -353,7 +353,7 @@ RUNBOX_ROOT/
 | `RUNBOX_MAX_REQUEST_BYTES` | `200MiB` | HTTP 请求体上限。 |
 | `RUNBOX_MAX_UPLOAD_BYTES` | `20MiB` | 单文件上限。 |
 | `RUNBOX_MAX_COMMAND_BYTES` | `64KiB` | 单条命令长度上限。 |
-| `RUNBOX_MAX_INPUTS` | `64` | 单次执行的输入上限（file ID + multipart 文件）。 |
+| `RUNBOX_MAX_INPUTS` | `64` | 单次执行的 multipart 附件数量上限。 |
 | `RUNBOX_MAX_STDOUT_BYTES` | `200KiB` | 捕获的 stdout+stderr 上限，保留首尾。 |
 | `RUNBOX_MAX_OUTPUT_FILES` | `20` | 单次执行返回的产物数量。 |
 | `RUNBOX_MAX_OUTPUT_BYTES` | `200MiB` | 单次执行返回的产物总大小。 |
@@ -373,14 +373,19 @@ RUNBOX_ROOT/
 
 ## 镜像内容
 
-| 能力 | 完整镜像 | 精简镜像 |
-|---|---|---|
-| Python 3、Node、npm、git、curl、unzip/zip | 有 | 有 |
-| `pdftotext` | 有 | 有 |
-| LibreOffice（Writer/Calc/Impress） | 有 | 无 |
-| 中文字体 | 有 | 无 |
-| Python 文档/数据类库 | 有 | 无 |
-| Node `xlsx`、`csv-parse`、`dayjs` | 有 | 无 |
+| 能力 | 完整镜像 | 精简镜像 | Toolbox |
+|---|---|---|---|
+| Agent 常用 CLI（git、curl/wget、jq、ripgrep、fd、bat、tree、file、sqlite3、less、nano、lsof） | 有 | 有 | 有 |
+| Python 3、Node、npm、unzip/zip | 有 | 有 | 有 |
+| `pdftotext` | 有 | 有 | 有 |
+| LibreOffice（Writer/Calc/Impress） | 有 | 无 | 无 |
+| 中文字体 | 有 | 无 | 无 |
+| Python 文档/数据类库 | 有 | 无 | 无 |
+| Node `xlsx`、`csv-parse`、`dayjs` | 有 | 无 | 无 |
+| `build-essential` 与开发头文件 | 无 | 无 | 有 |
+
+`minimal` 镜像解包后约 585MB；`full` 额外包含 LibreOffice 和数据类库，解包后约 1.4GB。
+代码/文本任务用 `minimal`，需要编译原生扩展时用 `toolbox`。
 
 受限网络可用构建参数：`GOPROXY`、`APT_MIRROR`、`PIP_INDEX`、`NPM_REGISTRY`，见 [docs/deployment.md](docs/deployment.md)。
 

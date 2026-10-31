@@ -75,15 +75,16 @@ Choose Runbox when you want one container next to your application, semi-trusted
 |---|---|
 | **Single-machine first** | Designed for one server: no scheduler, no control plane, no external database. SQLite and the workspaces live on the same volume. |
 | **One container, many identities** | The HTTP runner and the execution environment share one long-lived container. Each identity runs under its own UID; calls for one identity are serialized, different identities run concurrently. |
-| **Per-identity file isolation** | A private workspace, a workspace quota and symlink-safe path resolution. Files are downloaded by relative path or file ID; persistence is the caller's job. |
+| **Per-identity file isolation** | A private workspace, a workspace quota and symlink-safe path resolution. Files are downloaded by workspace-relative path; persistence is the caller's job. |
 | **Persistent workspaces** | Installed packages and intermediate files survive across calls. `HOME`, XDG directories and pip/npm prefixes all point inside the workspace and count toward the quota. |
-| **Caller-managed persistence** | Files produced under `out/` are returned as file IDs and also downloadable by path. Runbox does not keep a second long-term copy; download what you need and store it yourself. |
+| **Caller-managed persistence** | Files produced under `out/` are returned with their paths and downloadable directly. Runbox does not keep a second long-term copy; download what you need and store it yourself. |
 | **Bounded everything** | Upload size, command length, input count, captured stdout (head + tail), output count and size, workspace quota, timeout, concurrency and retention. |
-| **Files are first-class** | Upload, execute with inputs, list, download by opaque ID or workspace path, delete. Attachments stream as multipart; plain calls use JSON. |
+| **Files are first-class** | Upload, execute, list, download by workspace path, delete. Attachments stream as multipart; commands reference files by relative path. |
 | **Large files** | Uploads stream to disk without buffering the whole body in memory; downloads support `Range` and `HEAD`. |
-| **Batch and paths** | Upload several files at once; download any workspace file by relative path, or stream a directory as a tar archive. Intermediate files need no file ID. |
+| **Batch and paths** | Upload several files at once; download any workspace file by relative path, or stream a directory as a tar archive. Intermediate files need no extra identifier. |
 | **Fail-closed hardening** | Read-only root filesystem, dropped capabilities, `no-new-privileges`, tini as PID 1. Startup refuses to run as root without the capabilities it needs. |
 | **Observable by default** | `/ready` readiness, Prometheus metrics at `/metrics`, structured text or JSON request logs. |
+| **Agent-friendly toolchain** | `git`, `curl`/`wget`, `jq`, `ripgrep`, `fd`, `bat`, `tree`, `file`, `sqlite3`, `less`, `nano`, `lsof` and standard GNU tools are preinstalled. |
 | **Small enough to audit** | Gin on the HTTP edge, a stdlib-only SDK, and a small operational footprint. |
 
 ## Quick start
@@ -140,7 +141,7 @@ curl -fsS http://localhost:8099/v1/exec \
   -d '{"command":"mkdir -p out && echo hello > out/report.txt"}'
 ```
 
-The response contains a `file_id` for `out/report.txt`. Download it with `GET /v1/files/{id}`, or by path with `GET /v1/path?path=out/report.txt`.
+The response lists `out/report.txt` with its workspace-relative path. Download it with `GET /v1/path?path=out/report.txt`.
 
 ### 4. Or run from source
 
@@ -187,7 +188,7 @@ for _, file := range result.Files {
     if err != nil {
         return err
     }
-    if _, err := client.DownloadTo(context.Background(), file.FileID, out); err != nil {
+    if _, err := client.DownloadPathTo(context.Background(), sandbox.Identity{}, file.Path, out); err != nil {
         out.Close()
         return err
     }
@@ -266,7 +267,7 @@ Rules:
 - Namespace and principal are 1–128 characters from `[A-Za-z0-9._-]`.
 - Both forms normalize to one canonical SHA-256 key; storage paths use that key.
 - Raw tokens are never written to disk. Scoped namespace/principal and the UID assignment are stored in the `identities` table of `state/runbox.db`.
-- File IDs are bound to an identity. Accessing another identity's file ID returns `403`.
+- Paths are resolved relative to the identity workspace. Another identity sees its own workspace, or `404`.
 
 Authentication is `Authorization: Bearer <RUNBOX_API_KEY>`. `/health` and `/ready` are unauthenticated; everything else requires the bearer token.
 
@@ -279,9 +280,8 @@ Authentication is `Authorization: Bearer <RUNBOX_API_KEY>`. `/health` and `/read
 | GET | `/metrics` | Prometheus metrics (auth required) |
 | GET | `/v1/capabilities` | Limits and detected tooling |
 | POST | `/v1/exec` | Run a command (JSON or multipart) |
-| POST | `/v1/files` | Upload one file |
-| POST | `/v1/files/batch` | Upload several files in one request |
-| GET | `/v1/files/{id}` | Download a file by ID |
+| POST | `/v1/files` | Upload one file; returns its path |
+| POST | `/v1/files/batch` | Upload several files; returns their paths |
 | GET | `/v1/path?path=out/x` | Download by workspace path |
 | GET | `/v1/list?path=out` | List a workspace directory |
 | GET | `/v1/archive?path=out&path=tmp` | Download files or directories as a tar archive |
@@ -314,7 +314,7 @@ RUNBOX_ROOT/
 
 - The command runs in its own process group as the identity's UID. A timeout kills the group, not the container.
 - Output is captured with a bounded head + tail buffer, so a command printing gigabytes cannot exhaust RAM.
-- Files created under `out/` during the call are returned as file IDs that point into the workspace. Download them with the file ID or by relative path; Runbox keeps no second copy.
+- Files created under `out/` during the call are returned with their workspace-relative paths. Download them by path; Runbox keeps no second copy.
 - A janitor removes workspaces idle longer than the retention window.
 - The API key is compared in constant time; identity values are validated, not sanitized — sanitizing would merge distinct identities onto one workspace.
 
@@ -355,7 +355,7 @@ Durations accept `30s`, `15m`, `7d` or bare seconds; sizes accept `20MiB`, `20MB
 | `RUNBOX_MAX_REQUEST_BYTES` | `200MiB` | HTTP body limit. |
 | `RUNBOX_MAX_UPLOAD_BYTES` | `20MiB` | Per-file limit. |
 | `RUNBOX_MAX_COMMAND_BYTES` | `64KiB` | Maximum command length. |
-| `RUNBOX_MAX_INPUTS` | `64` | Maximum inputs (file IDs plus multipart files) per execution. |
+| `RUNBOX_MAX_INPUTS` | `64` | Maximum multipart attachments per execution. |
 | `RUNBOX_MAX_STDOUT_BYTES` | `200KiB` | Captured stdout+stderr limit; keeps the head and the tail. |
 | `RUNBOX_MAX_OUTPUT_FILES` | `20` | Files returned from one execution. |
 | `RUNBOX_MAX_OUTPUT_BYTES` | `200MiB` | Total output size returned from one execution. |
@@ -375,14 +375,20 @@ Durations accept `30s`, `15m`, `7d` or bare seconds; sizes accept `20MiB`, `20MB
 
 ## Image contents
 
-| Capability | Full | Minimal |
-|---|---|---|
-| Python 3, Node, npm, git, curl, unzip/zip | yes | yes |
-| `pdftotext` | yes | yes |
-| LibreOffice (Writer/Calc/Impress) | yes | no |
-| CJK fonts | yes | no |
-| Python document/data libraries | yes | no |
-| Node `xlsx`, `csv-parse`, `dayjs` | yes | no |
+| Capability | Full | Minimal | Toolbox |
+|---|---|---|---|
+| Agent CLI (git, curl/wget, jq, ripgrep, fd, bat, tree, file, sqlite3, less, nano, lsof) | yes | yes | yes |
+| Python 3, Node, npm, unzip/zip | yes | yes | yes |
+| `pdftotext` | yes | yes | yes |
+| LibreOffice (Writer/Calc/Impress) | yes | no | no |
+| CJK fonts | yes | no | no |
+| Python document/data libraries | yes | no | no |
+| Node `xlsx`, `csv-parse`, `dayjs` | yes | no | no |
+| `build-essential` and development headers | no | no | yes |
+
+The `minimal` image is about 585 MB unpacked; `full` adds LibreOffice and data
+libraries and is about 1.4 GB unpacked. Pick `minimal` for code/text workloads
+and `toolbox` when packages need to compile native extensions.
 
 Build arguments for restricted networks: `GOPROXY`, `APT_MIRROR`, `PIP_INDEX`, `NPM_REGISTRY`. See [docs/deployment.md](docs/deployment.md).
 

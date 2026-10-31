@@ -3,7 +3,7 @@ GO ?= go
 BINARY := bin/runboxd$(shell $(GO) env GOEXE)
 
 .PHONY: build test test-race fuzz vet fmt fmt-check check run \
-	docker docker-minimal sdk-test sdk-python-test sdk-node-test website-build clean
+	docker docker-minimal docker-toolbox sdk-test sdk-python-test sdk-node-test website-build clean
 
 build:
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o $(BINARY) ./cmd/runboxd
@@ -39,6 +39,9 @@ docker:
 
 docker-minimal:
 	docker build --target minimal --build-arg VERSION=$(VERSION) -t runbox:$(VERSION)-minimal -t runbox:latest-minimal .
+
+docker-toolbox:
+	docker build --target toolbox --build-arg VERSION=$(VERSION) -t runbox:$(VERSION)-toolbox -t runbox:latest-toolbox .
 
 sdk-python-test:
 	cd sdk/python && PYTHONPATH=src python -m unittest discover -s tests -v
