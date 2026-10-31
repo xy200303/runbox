@@ -30,11 +30,9 @@
 
 ---
 
-**Runbox** 是给 Agent 执行命令、处理文件的轻量单容器沙箱。它给 Agent 一个可持久化的 Linux 工作区：上传输入、执行 Python / Node / Shell、下载产物。每个身份拥有独立 UID、私有工作区、配额和工作区之外的不可变归档——全部发生在**一个**长期运行的容器里。不为每个用户新建容器或虚拟机，不需要编排器，没有数据库，也不挂 `docker.sock`。
+**Runbox** 是给 Agent 负载使用的轻量沙箱。它为每个调用方提供可持久化的 Linux 工作区：上传输入、执行 Python / Node / Shell、取回结果。多个身份共享一个长期运行的容器，同时各自拥有独立 UID、私有工作区、配额和不可变归档。
 
-名字就是字面意思：**run in a box**。box 跑的是 Agent 的代码、装的是 Agent 的文件，不是 Agent 本身。
-
-> **Runbox 不是 Agent 运行时。** 它不托管 Agent、不跑模型循环；它是 Agent 通过 HTTP 调用的命令执行与文件后端。
+部署保持简单：一个 Go 二进制、一个容器、一个卷，对外只有一套 HTTP 接口。名字就是字面意思：**run in a box**。
 
 ## 为什么是 Runbox？
 
@@ -65,7 +63,7 @@ Runbox 采用 **dify-sandbox 的形态**：一个长期运行的容器，承载�
 | **文件是一等公民** | 上传、带输入执行、列目录、按不透明 ID 或工作区路径下载、归档、删除。带附件走流式 multipart，普通调用走 JSON。 |
 | **默认 fail-closed** | 只读根文件系统、丢弃能力、`no-new-privileges`、tini 作为 PID 1。以 root 启动却缺少所需能力时拒绝启动。 |
 | **自带可观测性** | `/ready` 就绪检查、`/metrics` Prometheus 指标、文本或 JSON 结构化日志。 |
-| **小到可以通读** | 仅标准库的 Go 实现，没有数据库、消息队列和调度器。 |
+| **小到可以通读** | 仅标准库的 Go 实现，运维面很小。 |
 
 ## 快速开始
 
@@ -348,13 +346,6 @@ OpenSandbox、CubeSandbox 是带控制面的项目，支持不同部署形态；
 最接近的先例是 **dify-sandbox**：一个容器 + 每任务 UID。Runbox 沿用这个形态，并补上前面说的按身份文件隔离。
 
 ## 常见问题
-
-<details>
-<summary><strong>Runbox 是 Agent 运行时吗？</strong></summary>
-
-不是。Runbox 不托管 Agent、不调用模型、不跑工作流循环。它只执行命令、搬运文件；运行什么、什么时候运行，由你的 Agent 框架决定。
-
-</details>
 
 <details>
 <summary><strong>每个用户都会新建容器吗？</strong></summary>

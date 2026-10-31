@@ -30,11 +30,9 @@
 
 ---
 
-**Runbox** is a lightweight, single-container sandbox for agent commands and files. It gives an agent a persistent Linux workspace: upload inputs, run Python, Node or shell commands, download the artifacts. Each identity gets its own UID, private workspace, quotas and immutable archive — inside **one** long-lived container. No container or VM per user, no orchestrator, no database, no `docker.sock`.
+**Runbox** is a lightweight sandbox for agent workloads. It gives each caller a persistent Linux workspace: upload inputs, run Python, Node or shell commands, and collect the results. Identities share one long-running container, but keep separate UIDs, private workspaces, quotas and an immutable archive.
 
-The name is literal: **run in a box**. The box runs agent code and holds agent files; it does not run the agent itself.
-
-> **Runbox is not an agent runtime.** It does not host agents or run a model loop. It is the execution and file backend your agent calls over HTTP.
+It is small on purpose: one Go binary, one container, one volume, and a single HTTP API. The name is literal: **run in a box**.
 
 ## Why Runbox?
 
@@ -65,7 +63,7 @@ Choose Runbox when you want one container next to your application, semi-trusted
 | **Files are first-class** | Upload, execute with inputs, list, download by opaque ID or workspace path, archive, delete. Attachments stream as multipart; plain calls use JSON. |
 | **Fail-closed hardening** | Read-only root filesystem, dropped capabilities, `no-new-privileges`, tini as PID 1. Startup refuses to run as root without the capabilities it needs. |
 | **Observable by default** | `/ready` readiness, Prometheus metrics at `/metrics`, structured text or JSON request logs. |
-| **Small enough to audit** | Stdlib-only Go implementation, no database, no message queue, no scheduler. |
+| **Small enough to audit** | Stdlib-only Go implementation with a small operational footprint. |
 
 ## Quick start
 
@@ -348,13 +346,6 @@ OpenSandbox and CubeSandbox are control-plane projects and support different dep
 The closest prior art is **dify-sandbox**: one container with a per-task UID. Runbox keeps that shape and adds the per-identity file isolation described above.
 
 ## FAQ
-
-<details>
-<summary><strong>Is Runbox an agent runtime?</strong></summary>
-
-No. Runbox does not host agents, call models or run a workflow loop. It executes commands and moves files. Your agent framework decides what to run and when.
-
-</details>
 
 <details>
 <summary><strong>Does every user get a container?</strong></summary>
