@@ -28,7 +28,7 @@ jobs:
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
           packages-dir: sdk/python/dist
-          skip_existing: true
+          skip-existing: true
 
   node:
     runs-on: ubuntu-latest
