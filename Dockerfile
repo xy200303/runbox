@@ -13,7 +13,7 @@
 # timeout terminate a command running as another UID). All images use tini as
 # PID 1 so killed command trees are reaped.
 
-ARG GO_VERSION=1.26.5
+ARG GO_VERSION=1.26.10
 ARG DEBIAN_VERSION=bookworm-slim
 
 FROM golang:${GO_VERSION}-alpine AS build

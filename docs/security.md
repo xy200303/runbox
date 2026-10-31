@@ -222,7 +222,7 @@ when application code changes.
 Runbox does not claim a zero-CVE image. No image can. The workflow is:
 
 1. `security.yml` runs `govulncheck`, `npm audit`, and a Trivy image scan for
-   high/critical fixable issues on pushes and weekly.
+   critical fixable issues on pushes and weekly.
 2. Dependabot proposes Go, npm, Python and GitHub Actions updates.
 3. Image scans report the package and CVE; triage `ignore-unfixed` findings
    separately. Rebuild after the base or a dependency is fixed.
