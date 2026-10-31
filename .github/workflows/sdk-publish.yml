@@ -53,6 +53,12 @@ jobs:
             echo "runbox-sdk@$version is already published"
             exit 0
           fi
-          npm publish --access public
+          out=$(npm publish --access public 2>&1) && { echo "$out"; exit 0; }
+          echo "$out"
+          if echo "$out" | grep -q "previously staged version"; then
+            echo "::warning::runbox-sdk@$version is staged and awaits approval: npm stage approve <stage-id> --otp <code>"
+            exit 0
+          fi
+          exit 1
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
