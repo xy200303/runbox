@@ -510,7 +510,8 @@ For development, yes. Production isolation is Linux-only, because per-identity U
 - [ ] Optional hard disk quotas per identity
 - [ ] A maintained seccomp profile and a gVisor deployment recipe
 - [ ] Tenant admin API: namespace-level usage and quota
-- [ ] Signed container images, SBOMs and provenance attestations
+- [x] SBOM and provenance attestations for published images
+- [ ] Signed container images with cosign/Sigstore
 
 ## Contributing
 

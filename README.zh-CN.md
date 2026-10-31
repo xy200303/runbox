@@ -501,7 +501,8 @@ Dify 的 sandbox 是 Dify 技术栈的一部分，按任务隔离文件。Runbox
 - [ ] 可选的按身份硬磁盘配额
 - [ ] 维护中的 seccomp profile 与 gVisor 部署配方
 - [ ] 租户管理 API：namespace 级用量、配额与清理
-- [ ] 镜像签名、SBOM 与 provenance 证明
+- [x] 发布镜像附带 SBOM 与 provenance 证明
+- [ ] 使用 cosign/Sigstore 对镜像签名
 
 ## 贡献
 
