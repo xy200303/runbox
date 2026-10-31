@@ -38,24 +38,31 @@ jobs:
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
           packages-dir: sdk/python/dist
+          skip_existing: true
 
   node:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     defaults:
       run:
         working-directory: sdk/node
-    env:
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           registry-url: "https://registry.npmjs.org"
       - run: npm ci
       - run: npm test
       - name: publish to npm
-        if: env.NPM_TOKEN != ''
-        run: npm publish --access public
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if npm view "runbox-sdk@$version" version >/dev/null 2>&1; then
+            echo "runbox-sdk@$version is already published"
+            exit 0
+          fi
+          npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
