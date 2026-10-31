@@ -12,6 +12,28 @@ The sizes are unpacked container footprints measured with `du -sh /`; compressed
 registry layers are smaller. `full` is the default because document conversion
 is the common agent workload; use `minimal` when size matters.
 
+### Why Debian slim
+
+Debian 12 slim is the base because it keeps the three things that matter for an
+agent sandbox:
+
+- **glibc and the standard Linux layout.** Manylinux Python wheels and native
+  Node modules work without musl workarounds; paths, `bash` and GNU tools match
+  what agents expect.
+- **apt with a large package set.** LibreOffice, poppler, Python, Node and the
+  common CLI tools are one `apt-get install` away. `--no-install-recommends`
+  and removing `/var/lib/apt/lists` keep the layer small.
+- **A small, stable base.** `debian:bookworm-slim` is roughly 75 MB before the
+  tools, is multi-arch, and has a predictable security-update cadence. Docker
+  Official Images for Python, Node and Postgres also publish Debian variants,
+  so the base is familiar to operators.
+
+Ubuntu is a close alternative (newer packages, also Debian-derived); Alpine is
+smaller but musl breaks too many Python/Node binaries, and distroless/scratch
+have no shell or apt, which is the opposite of an agent sandbox. The image size
+is dominated by the tools, not the base: `minimal` is ~585 MB unpacked and
+`full` ~1.4 GB.
+
 ```bash
 docker build -t runbox:latest .
 docker build --target minimal -t runbox:minimal .
