@@ -1,11 +1,31 @@
 # Changelog
 
-## Unreleased
+## 0.2.3 — 2026-11-01
 
 - `full` is now built on `toolbox`, so the default image can compile native
   Python and Node extensions. Its amd64 download grows from ~485 MB to ~600 MB.
-- Image sizes in the docs are now the published download size rather than an
+- Image sizes in the docs are the published download size rather than an
   earlier `du` measurement: `minimal` ~170 MB, `toolbox` ~285 MB, `full` ~600 MB.
+- The Go, Python and Node SDKs stream uploads. Pass a reader, an open file or an
+  incoming request body and the client forwards it as it arrives, using
+  `Transfer-Encoding: chunked` when the length is unknown. `FileUpload` accepts a
+  `stream` in Python and Node; Go already took an `io.Reader`.
+- New streaming downloads: `OpenArchive` (Go), `open_path` / `open_archive` /
+  `download_path_to` (Python), `openPath` / `openArchive` / `downloadPathTo`
+  (Node), so an HTTP handler forwards a body instead of writing a temp file.
+- Python and Node gained the operational calls Go already had: `ready`,
+  `metrics`, and `wait_ready` / `waitReady`.
+- Fixed a compile error in the Go `DownloadToFile` (wrong arity from
+  `DownloadPathTo`).
+- Streaming downloads now carry ranges and response metadata: Go
+  `OpenPathWithOptions` returns `PathMeta` (name, size, content type) and takes
+  a byte range, Node `openPathStream` returns the same alongside the stream, and
+  Python gained `iter_path` / `iter_archive` for framework responses.
+- The SDK READMEs now cover identity, exec, uploads, path downloads, streaming
+  forwarding recipes and error codes instead of one snippet each.
+- Release notes are cut from `CHANGELOG.md` by `.github/workflows/release.yml`,
+  so the tag page matches the changelog; a tag without a section falls back to
+  generated notes.
 
 ## 0.2.2 — 2026-10-31
 

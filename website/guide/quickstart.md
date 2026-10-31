@@ -27,7 +27,7 @@ docker run -d --name runbox \
 
 ```bash
 curl -fsS http://localhost:8099/health
-# {"status":"healthy","version":"0.2.2","uptime_seconds":2}
+# {"status":"healthy","version":"0.2.3","uptime_seconds":2}
 ```
 
 镜像有三档，接口完全一致，只换 tag：

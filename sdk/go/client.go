@@ -10,6 +10,8 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -323,24 +325,84 @@ func (c *Client) DownloadArchive(ctx context.Context, identity Identity, paths [
 	return io.Copy(w, response.Body)
 }
 
-// OpenPath downloads a file by its workspace-relative path (out/report.xlsx).
-func (c *Client) OpenPath(ctx context.Context, identity Identity, path string) (io.ReadCloser, string, error) {
+// OpenArchive streams a tar of several paths or directories. The caller owns
+// the reader and must close it; this is what an HTTP handler forwards to a
+// response so the archive never touches disk.
+func (c *Client) OpenArchive(ctx context.Context, identity Identity, paths []string) (io.ReadCloser, error) {
 	client, err := c.scoped(identity)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	if strings.TrimSpace(path) == "" {
-		return nil, "", BadRequest("path is required")
+	if len(paths) == 0 {
+		return nil, BadRequest("at least one path is required")
 	}
-	request, err := client.newRequest(ctx, http.MethodGet, "/v1/path?path="+url.QueryEscape(path), nil, "")
+	query := url.Values{}
+	for _, path := range paths {
+		query.Add("path", path)
+	}
+	request, err := client.newRequest(ctx, http.MethodGet, "/v1/archive?"+query.Encode(), nil, "")
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	response, err := client.send(request)
 	if err != nil {
+		return nil, err
+	}
+	return response.Body, nil
+}
+
+// PathOptions controls how a workspace file is streamed back.
+type PathOptions struct {
+	// Range asks for a byte range, for example "bytes=0-1023". Empty streams
+	// the whole file; a 206 response is passed through unchanged.
+	Range string
+}
+
+// PathMeta carries the response headers of a streamed download so an HTTP
+// handler can forward them instead of guessing.
+type PathMeta struct {
+	Name        string // filename from Content-Disposition
+	Size        int64  // Content-Length, or -1 when the runner streams without one
+	ContentType string
+}
+
+// OpenPath streams a file by its workspace-relative path (out/report.xlsx).
+func (c *Client) OpenPath(ctx context.Context, identity Identity, path string) (io.ReadCloser, string, error) {
+	reader, meta, err := c.OpenPathWithOptions(ctx, identity, path, PathOptions{})
+	if err != nil {
 		return nil, "", err
 	}
-	return response.Body, responseFilename(response), nil
+	return reader, meta.Name, nil
+}
+
+// OpenPathWithOptions streams a file with an optional byte range and returns
+// the response metadata. The caller owns the reader and must close it; nothing
+// is buffered, so an HTTP handler can forward it straight to a client.
+func (c *Client) OpenPathWithOptions(ctx context.Context, identity Identity, path string, opts PathOptions) (io.ReadCloser, PathMeta, error) {
+	client, err := c.scoped(identity)
+	if err != nil {
+		return nil, PathMeta{}, err
+	}
+	if strings.TrimSpace(path) == "" {
+		return nil, PathMeta{}, BadRequest("path is required")
+	}
+	request, err := client.newRequest(ctx, http.MethodGet, "/v1/path?path="+url.QueryEscape(path), nil, "")
+	if err != nil {
+		return nil, PathMeta{}, err
+	}
+	if opts.Range != "" {
+		request.Header.Set("Range", opts.Range)
+	}
+	response, err := client.send(request)
+	if err != nil {
+		return nil, PathMeta{}, err
+	}
+	meta := PathMeta{
+		Name:        responseFilename(response),
+		Size:        response.ContentLength,
+		ContentType: response.Header.Get("Content-Type"),
+	}
+	return response.Body, meta, nil
 }
 
 // DownloadPathTo streams a workspace file into w and returns the server-side
@@ -356,6 +418,123 @@ func (c *Client) DownloadPathTo(ctx context.Context, identity Identity, path str
 		return name, n, err
 	}
 	return name, n, nil
+}
+
+// UploadBytes uploads an in-memory buffer to the bound identity's files/ directory.
+func (c *Client) UploadBytes(ctx context.Context, name string, data []byte) (*UploadedFile, error) {
+	return c.Upload(ctx, name, bytes.NewReader(data), int64(len(data)))
+}
+
+// UploadFile uploads a local file and returns its workspace-relative path.
+func (c *Client) UploadFile(ctx context.Context, path string) (*UploadedFile, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, BadRequest(err.Error())
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, BadRequest(err.Error())
+	}
+	return c.Upload(ctx, filepath.Base(path), file, info.Size())
+}
+
+// IsReady calls GET /ready. A 503 answer means "not ready", not a failure, so
+// it returns false with a nil error. Other non-2xx answers are returned as
+// *Error.
+func (c *Client) IsReady(ctx context.Context) (bool, error) {
+	request, err := c.newRequest(ctx, http.MethodGet, "/ready", nil, "")
+	if err != nil {
+		return false, err
+	}
+	response, err := c.doRaw(request)
+	if err != nil {
+		return false, err
+	}
+	defer response.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<20))
+	switch response.StatusCode {
+	case http.StatusOK:
+		return true, nil
+	case http.StatusServiceUnavailable:
+		return false, nil
+	default:
+		return false, NewError(response.StatusCode, fmt.Sprintf("http_%d", response.StatusCode), http.StatusText(response.StatusCode))
+	}
+}
+
+// WaitReady polls /ready until the runner reports ready or ctx is done. Use it
+// right after starting a container instead of sleeping blindly.
+func (c *Client) WaitReady(ctx context.Context, interval time.Duration) error {
+	if interval <= 0 {
+		interval = 250 * time.Millisecond
+	}
+	for {
+		ready, err := c.IsReady(ctx)
+		if err == nil && ready {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			if err != nil {
+				return NewError(0, "not_ready", ctx.Err().Error()+": "+err.Error())
+			}
+			return NewError(0, "not_ready", ctx.Err().Error())
+		case <-time.After(interval):
+		}
+	}
+}
+
+// Metrics calls GET /metrics and returns the Prometheus text exposition.
+func (c *Client) Metrics(ctx context.Context) (string, error) {
+	request, err := c.newRequest(ctx, http.MethodGet, "/metrics", nil, "")
+	if err != nil {
+		return "", err
+	}
+	request.Header.Set("Accept", "text/plain")
+	response, err := c.send(request)
+	if err != nil {
+		return "", err
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(response.Body, 4<<20))
+	if err != nil {
+		return "", Internal(err.Error())
+	}
+	return string(body), nil
+}
+
+// ReadPath downloads a workspace file into memory. Use OpenPath or
+// DownloadPathTo for large files.
+func (c *Client) ReadPath(ctx context.Context, identity Identity, path string) ([]byte, error) {
+	reader, _, err := c.OpenPath(ctx, identity, path)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, Internal(err.Error())
+	}
+	return data, nil
+}
+
+// DownloadToFile streams a workspace file into a local file and returns the
+// number of bytes written.
+func (c *Client) DownloadToFile(ctx context.Context, identity Identity, path, destination string) (int64, error) {
+	file, err := os.Create(destination)
+	if err != nil {
+		return 0, BadRequest(err.Error())
+	}
+	_, written, err := c.DownloadPathTo(ctx, identity, path, file)
+	if err != nil {
+		file.Close()
+		return written, err
+	}
+	if err := file.Close(); err != nil {
+		return written, Internal(err.Error())
+	}
+	return written, nil
 }
 
 // List returns a directory listing inside the caller's workspace. An empty
@@ -442,13 +621,21 @@ func (c *Client) newRequest(ctx context.Context, method, endpoint string, body i
 	return request, nil
 }
 
-func (c *Client) send(request *http.Request) (*http.Response, error) {
+func (c *Client) doRaw(request *http.Request) (*http.Response, error) {
 	response, err := c.http.Do(request)
 	if err != nil {
 		if request.Context().Err() != nil {
 			return nil, NewError(0, "canceled", request.Context().Err().Error())
 		}
 		return nil, NewError(0, "unreachable", err.Error())
+	}
+	return response, nil
+}
+
+func (c *Client) send(request *http.Request) (*http.Response, error) {
+	response, err := c.doRaw(request)
+	if err != nil {
+		return nil, err
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		defer response.Body.Close()

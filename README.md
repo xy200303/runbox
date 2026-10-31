@@ -17,7 +17,7 @@
 
 <p align="center">
   <a href="https://github.com/xy200303/runbox/actions/workflows/ci.yml"><img src="https://github.com/xy200303/runbox/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
-  <img src="https://img.shields.io/badge/version-0.2.2-2563EB?style=for-the-badge" alt="Version 0.2.2">
+  <img src="https://img.shields.io/badge/version-0.2.3-2563EB?style=for-the-badge" alt="Version 0.2.3">
   <img src="https://img.shields.io/badge/Go-1.26-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go 1.26">
   <img src="https://img.shields.io/badge/license-MIT-16A34A?style=for-the-badge" alt="MIT license">
   <img src="https://img.shields.io/badge/docker-ready-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker ready">
@@ -98,8 +98,8 @@ can assign per-identity UIDs:
 | `minimal` | `docker pull ghcr.io/xy200303/runbox:latest-minimal` | ~170 MB | Code, text, PDF extraction |
 | `toolbox` | `docker pull ghcr.io/xy200303/runbox:latest-toolbox` | ~285 MB | Compiling without the Office layer |
 
-Versioned tags follow the release, for example `v0.2.2`, `v0.2.2-minimal` and
-`v0.2.2-toolbox`.
+Versioned tags follow the release, for example `v0.2.3`, `v0.2.3-minimal` and
+`v0.2.3-toolbox`.
 
 Run any variant with the same command; only the image tag changes:
 
@@ -190,7 +190,6 @@ RUNBOX_ALLOW_ANONYMOUS=1 RUNBOX_ROOT=./.runbox go run ./cmd/runboxd
 import (
     "context"
     "os"
-    "time"
 
     "github.com/xy200303/runbox/sdk/go"
 )
@@ -211,23 +210,10 @@ result, err := client.Run(context.Background(), sandbox.ExecRequest{
 if err != nil {
     return err
 }
-
-// result.ExitCode is a normal result: the command ran and chose to exit.
-fmt.Println(result.Stdout)
-for _, file := range result.Files {
-    out, err := os.Create(filepath.Base(file.Name))
-    if err != nil {
-        return err
-    }
-    if _, err := client.DownloadPathTo(context.Background(), sandbox.Identity{}, file.Path, out); err != nil {
-        out.Close()
-        return err
-    }
-    out.Close()
-}
+fmt.Println(result.Stdout) // a non-zero ExitCode is a result, not an error
 ```
 
-Attachments stream straight from an `io.Reader`:
+Attachments stream straight from an `io.Reader`; nothing is buffered first:
 
 ```go
 result, err := client.Run(ctx, sandbox.ExecRequest{
@@ -236,7 +222,23 @@ result, err := client.Run(ctx, sandbox.ExecRequest{
 })
 ```
 
-`Client` also implements `sandbox.Backend`: use `Exec(ctx, identity, …)` when the identity is passed per call, or `Run` with a client bound to one identity.
+Downloads have two shapes. `OpenPath` hands you the body so an HTTP handler can
+forward it, and `DownloadPathTo` writes into any `io.Writer`:
+
+```go
+reader, name, err := client.OpenPath(ctx, sandbox.Identity{}, "out/report.csv")
+if err != nil {
+    return err
+}
+defer reader.Close()
+c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename=%q`, name))
+c.DataFromReader(http.StatusOK, -1, "text/csv", reader, nil)
+
+archive, err := client.OpenArchive(ctx, sandbox.Identity{}, []string{"out", "tmp"})
+```
+
+`Client` also implements `sandbox.Backend`: use `Exec(ctx, identity, …)` when the
+identity is passed per call, or `Run` with a client bound to one identity.
 
 ## Python and Node SDKs
 
@@ -247,17 +249,23 @@ pip install runbox-sdk
 ```
 
 ```python
-from runbox import Client, Identity
+from runbox import Client, FileUpload, Identity
 
 client = Client(
     "http://localhost:8099",
     api_key=os.environ["RUNBOX_API_KEY"],
     identity=Identity(namespace="team-a", principal="user-42"),
 )
+
 result = client.exec('python3 -c "print(6 * 7)"')
 print(result["stdout"])
+
 client.download_path("out/report.csv", "report.csv")
 client.download_archive(["out", "tmp"], "artifacts.tar")
+
+with client.open_path("out/report.csv") as body:
+    for chunk in body:
+        handle.write(chunk)
 ```
 
 Node ships typed ESM:
@@ -274,13 +282,120 @@ const client = new Client({
   apiKey: process.env.RUNBOX_API_KEY,
   identity: { namespace: 'team-a', principal: 'user-42' },
 })
+
 const result = await client.exec('echo hello')
-await client.downloadArchive(['out'], 'artifacts.tar')
+await client.downloadPath('out/report.csv', 'report.csv')
+await client.downloadArchive(['out', 'tmp'], 'artifacts.tar')
+
+const body = await client.openPath('out/report.csv')
+body.pipe(response)
 ```
 
-Source: [`sdk/python`](sdk/python) and [`sdk/node`](sdk/node). A full curl
-walkthrough — upload, exec, list, download — is in
+Source: [`sdk/go`](sdk/go), [`sdk/python`](sdk/python) and [`sdk/node`](sdk/node).
+A full curl walkthrough — upload, exec, list, download — is in
 [`examples/curl.sh`](examples/curl.sh).
+
+## Streaming and forwarding
+
+An agent backend usually receives an upload and immediately hands it to the
+sandbox. All three SDKs accept a **stream**, so the file never has to be written
+to local disk and re-read:
+
+| SDK | Upload from a stream | Download into a stream |
+| --- | --- | --- |
+| Go | `FileUpload{Reader: r}` (also `Upload(ctx, name, r, size)`) | `OpenPath` / `OpenArchive` / `DownloadPathTo` |
+| Python | `upload_stream(name, f)`, `FileUpload(name, stream=f)`, `exec(..., files=[...])` | `open_path` / `open_archive` / `download_path_to` |
+| Node | `uploadStream(name, s)`, `FileUpload{stream: s}`, `exec(..., {files: [...]})` | `openPath` / `openArchive` / `downloadPathTo` |
+
+When the length is unknown the request is framed with
+`Transfer-Encoding: chunked`; when it is known (a seekable file, or `size=` given
+explicitly) the SDK sends `Content-Length` instead. Streams are read once and
+never closed by the SDK — the caller still owns them.
+
+### Gin: forward the incoming multipart file
+
+```go
+func analyze(c *gin.Context) {
+    header, err := c.FormFile("file")
+    if err != nil {
+        c.String(http.StatusBadRequest, err.Error())
+        return
+    }
+    upload, err := header.Open() // multipart.File: an io.Reader over the request body
+    if err != nil {
+        c.String(http.StatusBadRequest, err.Error())
+        return
+    }
+    defer upload.Close()
+
+    name := filepath.Base(header.Filename)
+    result, err := client.Run(c.Request.Context(), sandbox.ExecRequest{
+        Command: "python3 analyze.py files/" + name,
+        Files:   []sandbox.FileUpload{{Name: name, Reader: upload}},
+    })
+    if err != nil {
+        c.String(http.StatusBadGateway, err.Error())
+        return
+    }
+    c.JSON(http.StatusOK, result)
+}
+```
+
+The upload is copied from the client to `runboxd` as it arrives: no temp file, no
+second read, one round trip, and the command timeout is bounded by the request
+context.
+
+### FastAPI / Flask: forward the framework's file object
+
+```python
+# FastAPI: UploadFile.file is a SpooledTemporaryFile
+@app.post("/analyze")
+async def analyze(file: UploadFile) -> dict:
+    result = await run_in_threadpool(
+        client.exec,
+        f"python3 analyze.py files/{file.filename}",
+        files=[FileUpload(file.filename, stream=file.file)],
+    )
+    return {"stdout": result["stdout"]}
+
+# Flask: request.files[...].stream is the raw upload stream
+@app.post("/analyze")
+def analyze():
+    upload = request.files["file"]
+    client.upload_stream(upload.filename, upload.stream)
+    return {"path": f"files/{upload.filename}"}
+```
+
+Returning a file without saving it:
+
+```python
+from flask import Response
+
+@app.get("/report")
+def report():
+    body = client.open_path("out/report.csv")
+    return Response(
+        (chunk for chunk in iter(lambda: body.read(65536), b"")),
+        mimetype="text/csv",
+    )
+```
+
+### Express: pipe the request body in, pipe the file out
+
+```ts
+app.post('/analyze', async (req, res) => {
+  const uploaded = await client.uploadStream('input.csv', req, {
+    contentType: 'text/csv',
+  })
+  const result = await client.exec(`python3 analyze.py ${uploaded.path}`)
+  const file = await client.openPath('out/report.csv')
+  res.setHeader('Content-Type', 'text/csv')
+  file.pipe(res)
+})
+```
+
+`req` is a Node `Readable`, so it is forwarded as-is. If you parse multipart with
+`busboy`, pass the per-file stream instead of `req`.
 
 ## SDK integration rules
 
@@ -297,9 +412,14 @@ Every SDK follows the same contract:
 6. **Exec attachments** use repeated `files` fields and land in `files/`; the
    command refers to them as `files/<name>`.
 7. **Downloads** use `GET /v1/path?path=...` for one file and
-   `GET /v1/archive?path=...&path=...` for a batch tar. The SDKs expose these as
-   `OpenPath`/`DownloadPathTo`, `download_path`, `downloadPath`, and
-   `DownloadArchive`/`download_archive`/`downloadArchive`.
+   `GET /v1/archive?path=...&path=...` for a batch tar.
+8. **Streams in, streams out.** Uploads accept any reader; downloads expose an
+   open body (`OpenPath`, `open_path`, `openPath`, `OpenArchive`,
+   `open_archive`, `openArchive`) and a writer sink (`DownloadPathTo`,
+   `download_path_to`, `downloadPathTo`).
+9. **Operations** are available in every SDK: health, readiness
+   (`WaitReady` / `wait_ready` / `waitReady`), capabilities, metrics, list and
+   workspace deletion.
 
 ## Identity model
 

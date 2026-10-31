@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PassThrough } from 'node:stream'
+import { Readable } from 'node:stream'
 import test from 'node:test'
 
 import { Client, RunboxError, identityHeaders } from '../dist/index.js'
@@ -20,9 +22,9 @@ async function startServer() {
       response.end(JSON.stringify({ exit_code: 0, stdout: 'ok', files: [] }))
       return
     }
-    if (request.url === '/v1/files/batch') {
+    if (request.url === '/v1/files' || request.url === '/v1/files/batch') {
       response.writeHead(200, { 'Content-Type': 'application/json' })
-      response.end(JSON.stringify({ files: [{ path: 'files/a.txt', name: 'a.txt', size: 3 }] }))
+      response.end(JSON.stringify({ path: 'files/a.txt', name: 'a.txt', size: 3, files: [{ path: 'files/a.txt', name: 'a.txt', size: 3 }] }))
       return
     }
     if (request.url.startsWith('/v1/path')) {
@@ -38,6 +40,16 @@ async function startServer() {
     if (request.url.startsWith('/v1/archive')) {
       response.writeHead(200, { 'Content-Type': 'application/x-tar' })
       response.end('tar-data')
+      return
+    }
+    if (request.url === '/metrics') {
+      response.writeHead(200, { 'Content-Type': 'text/plain' })
+      response.end('runbox_uptime_seconds 1\n')
+      return
+    }
+    if (request.url === '/ready') {
+      response.writeHead(200, { 'Content-Type': 'application/json' })
+      response.end(JSON.stringify({ status: 'ready' }))
       return
     }
     response.writeHead(404, { 'Content-Type': 'application/json' })
@@ -80,7 +92,6 @@ test('batch upload sends file content', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'runbox-node-'))
   try {
     const path = join(directory, 'a.txt')
-    const { writeFile } = await import('node:fs/promises')
     await writeFile(path, 'aaa')
     const client = new Client({ baseUrl, apiKey: 'test-key', identity: { token: 'alice' } })
     const uploaded = await client.uploadBatch([{ name: 'a.txt', path }])
@@ -88,6 +99,44 @@ test('batch upload sends file content', async () => {
     assert.match(requests[0].body.toString(), /aaa/)
   } finally {
     await rm(directory, { recursive: true, force: true })
+    server.close()
+  }
+})
+
+test('uploadStream forwards a request body without buffering it', async () => {
+  const { server, requests, baseUrl } = await startServer()
+  try {
+    const client = new Client({ baseUrl, apiKey: 'test-key', identity: { token: 'alice' } })
+    const uploaded = await client.uploadStream(
+      'report.csv',
+      Readable.from([Buffer.from('forwarded-'), Buffer.from('bytes')]),
+      { contentType: 'text/csv' },
+    )
+    assert.equal(uploaded.path, 'files/a.txt')
+    const request = requests[0]
+    assert.equal(request.url, '/v1/files')
+    assert.equal(request.headers['transfer-encoding'], 'chunked')
+    assert.equal(request.headers['content-length'], undefined)
+    const body = request.body.toString()
+    assert.match(body, /filename="report.csv"/)
+    assert.match(body, /Content-Type: text\/csv/)
+    assert.match(body, /forwarded-bytes/)
+  } finally {
+    server.close()
+  }
+})
+
+test('exec forwards an attachment stream', async () => {
+  const { server, requests, baseUrl } = await startServer()
+  try {
+    const client = new Client({ baseUrl, apiKey: 'test-key', identity: { token: 'alice' } })
+    await client.exec('cat files/input.txt', {
+      files: [{ name: 'input.txt', stream: Readable.from(['stream-body']) }],
+    })
+    const body = requests[0].body.toString()
+    assert.match(body, /name="command"/)
+    assert.match(body, /stream-body/)
+  } finally {
     server.close()
   }
 })
@@ -109,6 +158,69 @@ test('download path and archive', async () => {
     )
   } finally {
     await rm(directory, { recursive: true, force: true })
+    server.close()
+  }
+})
+
+test('downloadPathTo pipes into an open writable', async () => {
+  const { server, baseUrl } = await startServer()
+  try {
+    const client = new Client({ baseUrl, apiKey: 'test-key', identity: { token: 'alice' } })
+    const sink = new PassThrough()
+    const chunks = []
+    sink.on('data', (chunk) => chunks.push(chunk))
+    await client.downloadPathTo('out/report.txt', sink)
+    assert.equal(Buffer.concat(chunks).toString(), 'path-data')
+  } finally {
+    server.close()
+  }
+})
+
+test('openArchive streams and metrics works', async () => {
+  const { server, baseUrl } = await startServer()
+  try {
+    const client = new Client({ baseUrl, apiKey: 'test-key', identity: { token: 'alice' } })
+    const archive = await client.openArchive(['out'])
+    const chunks = []
+    for await (const chunk of archive) chunks.push(chunk)
+    assert.equal(Buffer.concat(chunks).toString(), 'tar-data')
+    assert.match(await client.metrics(), /runbox_uptime_seconds/)
+    assert.equal((await client.waitReady(2000, 100)).status, 'ready')
+  } finally {
+    server.close()
+  }
+})
+
+test('openPathStream forwards the range and returns metadata', async () => {
+  let gotRange = null
+  const server = createServer((request, response) => {
+    gotRange = request.headers.range ?? null
+    response.writeHead(206, {
+      'Content-Type': 'application/pdf',
+      'Content-Length': '4',
+      'Content-Disposition': 'attachment; filename="report.pdf"',
+    })
+    response.end('part')
+  })
+  await new Promise((resolve) => server.listen(0, resolve))
+  const { port } = server.address()
+  try {
+    const client = new Client({
+      baseUrl: `http://127.0.0.1:${port}`,
+      apiKey: 'test-key',
+      identity: { token: 'alice' },
+    })
+    const { stream, size, contentType, name } = await client.openPathStream('out/report.pdf', {
+      range: 'bytes=0-3',
+    })
+    const chunks = []
+    for await (const chunk of stream) chunks.push(chunk)
+    assert.equal(Buffer.concat(chunks).toString(), 'part')
+    assert.equal(gotRange, 'bytes=0-3')
+    assert.equal(size, 4)
+    assert.equal(contentType, 'application/pdf')
+    assert.equal(name, 'report.pdf')
+  } finally {
     server.close()
   }
 })

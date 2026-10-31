@@ -17,7 +17,7 @@
 
 <p align="center">
   <a href="https://github.com/xy200303/runbox/actions/workflows/ci.yml"><img src="https://github.com/xy200303/runbox/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI 状态"></a>
-  <img src="https://img.shields.io/badge/version-0.2.2-2563EB?style=for-the-badge" alt="版本 0.2.2">
+  <img src="https://img.shields.io/badge/version-0.2.3-2563EB?style=for-the-badge" alt="版本 0.2.3">
   <img src="https://img.shields.io/badge/Go-1.26-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go 1.26">
   <img src="https://img.shields.io/badge/license-MIT-16A34A?style=for-the-badge" alt="MIT 许可证">
   <img src="https://img.shields.io/badge/docker-ready-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker">
@@ -97,7 +97,7 @@ Runbox 采用 **dify-sandbox 的形态**：一个长期运行的容器，承载�
 | `minimal` | `docker pull ghcr.io/xy200303/runbox:latest-minimal` | 约 585MB | 代码、文本、PDF 提取 |
 | `toolbox` | `docker pull ghcr.io/xy200303/runbox:latest-toolbox` | minimal + 约 300MB | 需要编译原生扩展的包 |
 
-版本 tag 跟随 release，例如 `v0.2.2`、`v0.2.2-minimal`、`v0.2.2-toolbox`。
+版本 tag 跟随 release，例如 `v0.2.3`、`v0.2.3-minimal`、`v0.2.3-toolbox`。
 
 三个变体用同一条命令启动，只换镜像 tag：
 
@@ -277,6 +277,61 @@ await client.downloadArchive(['out'], 'artifacts.tar')
 
 源码：[`sdk/python`](sdk/python)、[`sdk/node`](sdk/node)。完整 curl 走查（上传、执行、列目录、下载）见 [`examples/curl.sh`](examples/curl.sh)。
 
+## 流式转发
+
+后端常见做法是「收到上传 → 立刻交给沙箱」。三个 SDK 都直接收流，文件不用先落本地盘再读一遍：
+
+| SDK | 从流上传 | 下载到流 |
+| --- | --- | --- |
+| Go | `FileUpload{Reader: r}`、`Upload(ctx, name, r, size)` | `OpenPath` / `OpenArchive` / `DownloadPathTo` |
+| Python | `upload_stream(name, f)`、`FileUpload(name, stream=f)` | `open_path` / `open_archive` / `download_path_to` |
+| Node | `uploadStream(name, s)`、`FileUpload{stream: s}` | `openPath` / `openArchive` / `downloadPathTo` |
+
+长度未知时请求走 `Transfer-Encoding: chunked`；长度已知（可 seek 的文件，或显式传 `size=`）时发 `Content-Length`。流只被读一次，SDK 不负责关闭。
+
+Gin 直接把收到的 multipart 文件转给沙箱：
+
+```go
+header, err := c.FormFile("file")
+if err != nil {
+    c.String(http.StatusBadRequest, err.Error())
+    return
+}
+upload, err := header.Open() // multipart.File，本身就是 io.Reader
+if err != nil {
+    c.String(http.StatusBadRequest, err.Error())
+    return
+}
+defer upload.Close()
+
+name := filepath.Base(header.Filename)
+result, err := client.Run(c.Request.Context(), sandbox.ExecRequest{
+    Command: "python3 analyze.py files/" + name,
+    Files:   []sandbox.FileUpload{{Name: name, Reader: upload}},
+})
+```
+
+FastAPI 与 Flask 交出框架自己的文件对象即可：
+
+```python
+# FastAPI：UploadFile.file 是 SpooledTemporaryFile
+client.exec(f"python3 analyze.py files/{file.filename}",
+            files=[FileUpload(file.filename, stream=file.file)])
+
+# Flask：request.files[...].stream 是原始上传流
+upload = request.files["file"]
+client.upload_stream(upload.filename, upload.stream)
+```
+
+Express 把请求体直接当上传流，产物再 pipe 回响应：
+
+```ts
+const uploaded = await client.uploadStream('input.csv', req, { contentType: 'text/csv' })
+await client.exec(`python3 analyze.py ${uploaded.path}`)
+const file = await client.openPath('out/report.csv')
+file.pipe(res)
+```
+
 ## SDK 接入规则
 
 所有 SDK 遵循同一套契约：
@@ -290,9 +345,12 @@ await client.downloadArchive(['out'], 'artifacts.tar')
    `POST /v1/files/batch`，重复 `files` 字段。
 6. **exec 附件**用重复 `files` 字段，落到 `files/`；命令里写 `files/<name>`。
 7. **下载**单文件用 `GET /v1/path?path=...`，批量用
-   `GET /v1/archive?path=...&path=...` 返回 tar。SDK 对应
-   `OpenPath`/`DownloadPathTo`、`download_path`、`downloadPath` 和
-   `DownloadArchive`/`download_archive`/`downloadArchive`。
+   `GET /v1/archive?path=...&path=...` 返回 tar。
+8. **流进流出**：上传接受任意 reader；下载提供可读流（`OpenPath`、
+   `open_path`、`openPath`、`OpenArchive`、`open_archive`、`openArchive`）和写入端
+   （`DownloadPathTo`、`download_path_to`、`downloadPathTo`）。
+9. **运维调用**三个 SDK 都有：健康、就绪（`WaitReady` / `wait_ready` /
+   `waitReady`）、capabilities、metrics、列目录、删除工作区。
 
 ## 身份模型
 

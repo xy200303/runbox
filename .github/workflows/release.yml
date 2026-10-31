@@ -12,10 +12,47 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Release notes come from CHANGELOG.md so the tag page and the repository
+      # never disagree. Fall back to the Unreleased section, then to generated
+      # notes, so a tag without a changelog entry still produces a release.
+      - name: extract release notes
+        id: notes
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          notes="${RUNNER_TEMP}/release-notes.md"
+          awk -v v="$version" '
+            $0 ~ "^##[[:space:]]+" v "([^0-9.]|$)" { inside = 1; print "## " v; next }
+            inside && /^##[[:space:]]/ { exit }
+            inside { print }
+          ' CHANGELOG.md > "$notes"
+          if [ ! -s "$notes" ]; then
+            awk -v t="$TAG" '
+              /^##[[:space:]]+Unreleased/ { inside = 1; print "## " t; next }
+              inside && /^##[[:space:]]/ { exit }
+              inside { print }
+            ' CHANGELOG.md > "$notes"
+          fi
+          if [ -s "$notes" ]; then
+            printf '\n[Full changelog](https://github.com/%s/blob/main/CHANGELOG.md)\n' \
+              "$GITHUB_REPOSITORY" >> "$notes"
+            echo "file=$notes" >> "$GITHUB_OUTPUT"
+            sed -n '1,20p' "$notes"
+          else
+            echo "no changelog section for ${TAG}" >&2
+          fi
+
       - name: create release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "$GITHUB_REF_NAME" --generate-notes
+          NOTES: ${{ steps.notes.outputs.file }}
+        run: |
+          if [ -n "$NOTES" ] && [ -s "$NOTES" ]; then
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file "$NOTES"
+          else
+            gh release create "$GITHUB_REF_NAME" --generate-notes
+          fi
 
   python:
     runs-on: ubuntu-latest
