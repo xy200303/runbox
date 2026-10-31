@@ -21,7 +21,7 @@ func TestDefaults(t *testing.T) {
 	if cfg.MaxConcurrency != 2 || cfg.MaxUploadBytes != 20<<20 || cfg.QuotaBytes != 1<<30 {
 		t.Fatalf("unexpected limits: %+v", cfg)
 	}
-	if cfg.MaxCommandBytes != 64<<10 || cfg.MaxInputs != 64 {
+	if cfg.MaxCommandBytes != 64<<10 || cfg.MaxAttachments != 64 {
 		t.Fatalf("unexpected command/input limits: %+v", cfg)
 	}
 	if cfg.AllowMissingCapabilities {
@@ -69,7 +69,7 @@ func TestOverrides(t *testing.T) {
 		"RUNBOX_API_KEY":            "k",
 		"RUNBOX_MAX_UPLOAD_BYTES":   "1MiB",
 		"RUNBOX_MAX_COMMAND_BYTES":  "1KiB",
-		"RUNBOX_MAX_INPUTS":         "8",
+		"RUNBOX_MAX_ATTACHMENTS":    "8",
 		"RUNBOX_QUOTA_BYTES":        "2GiB",
 		"RUNBOX_RETENTION":          "3d",
 		"RUNBOX_MAX_TIMEOUT":        "10m",
@@ -85,7 +85,7 @@ func TestOverrides(t *testing.T) {
 	if cfg.MaxUploadBytes != 1<<20 || cfg.QuotaBytes != 2<<30 {
 		t.Fatalf("unexpected sizes: %+v", cfg)
 	}
-	if cfg.MaxCommandBytes != 1<<10 || cfg.MaxInputs != 8 {
+	if cfg.MaxCommandBytes != 1<<10 || cfg.MaxAttachments != 8 {
 		t.Fatalf("unexpected command/input limits: %+v", cfg)
 	}
 	if cfg.Retention != 72*time.Hour || cfg.MaxTimeout != 10*time.Minute {
@@ -123,7 +123,7 @@ func TestInvalidCombinations(t *testing.T) {
 			"RUNBOX_API_KEY": "k", "RUNBOX_ALLOW_MISSING_CAPS": "maybe",
 		},
 		"zero inputs": {
-			"RUNBOX_API_KEY": "k", "RUNBOX_MAX_INPUTS": "0",
+			"RUNBOX_API_KEY": "k", "RUNBOX_MAX_ATTACHMENTS": "0",
 		},
 	}
 	for name, values := range cases {

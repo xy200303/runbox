@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -34,7 +35,7 @@ func testConfig(t *testing.T) config.Config {
 		MaxRequestBytes: 4 << 20,
 		MaxUploadBytes:  1 << 20,
 		MaxCommandBytes: 64 << 10,
-		MaxInputs:       64,
+		MaxAttachments:  64,
 		MaxStdoutBytes:  64 << 10,
 		MaxOutputFiles:  10,
 		MaxOutputBytes:  8 << 20,
@@ -251,6 +252,32 @@ func TestExecRoundTrip(t *testing.T) {
 	var apiErr *sandbox.Error
 	if !errors.As(err, &apiErr) || apiErr.Code != "timeout" {
 		t.Fatalf("expected timeout error, got %v", err)
+	}
+}
+
+func TestSingleUploadRejectsBatchField(t *testing.T) {
+	ts, _, _, _ := newTestServer(t, nil)
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("files", "a.txt")
+	if err != nil {
+		t.Fatalf("part: %v", err)
+	}
+	_, _ = part.Write([]byte("a"))
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	request, _ := http.NewRequest(http.MethodPost, ts.URL+"/v1/files", &body)
+	request.Header.Set("Authorization", "Bearer test-key")
+	request.Header.Set("X-Runbox-Identity", "alice")
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status %d, want 400", response.StatusCode)
 	}
 }
 

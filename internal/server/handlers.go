@@ -154,9 +154,9 @@ func (s *Server) parseExecMultipart(c *gin.Context, identity sandbox.Identity) (
 			part.Close()
 			continue
 		}
-		if files >= s.cfg.MaxInputs {
+		if files >= s.cfg.MaxAttachments {
 			part.Close()
-			return "", 0, sandbox.BadRequest(fmt.Sprintf("too many attachments (limit %d)", s.cfg.MaxInputs))
+			return "", 0, sandbox.BadRequest(fmt.Sprintf("too many attachments (limit %d)", s.cfg.MaxAttachments))
 		}
 		files++
 		counting := &countingReader{reader: part}
@@ -214,7 +214,12 @@ func (s *Server) handleUpload(c *gin.Context) {
 		}
 		name := part.FormName()
 		filename := part.FileName()
-		if filename == "" || (name != "file" && name != "files") {
+		if filename != "" && name == "files" {
+			part.Close()
+			s.fail(c, sandbox.BadRequest("use /v1/files/batch for multiple files"))
+			return
+		}
+		if filename == "" || name != "file" {
 			_, _ = io.Copy(io.Discard, part)
 			part.Close()
 			continue

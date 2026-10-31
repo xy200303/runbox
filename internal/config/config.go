@@ -23,7 +23,7 @@ type Config struct {
 	MaxRequestBytes          int64
 	MaxUploadBytes           int64
 	MaxCommandBytes          int64
-	MaxInputs                int
+	MaxAttachments           int
 	MaxStdoutBytes           int
 	MaxOutputFiles           int
 	MaxOutputBytes           int64
@@ -57,7 +57,7 @@ func FromEnv(get func(string) string) (Config, error) {
 		MaxRequestBytes: 200 << 20,
 		MaxUploadBytes:  sandbox.DefaultMaxUploadBytes,
 		MaxCommandBytes: 64 << 10,
-		MaxInputs:       64,
+		MaxAttachments:  64,
 		MaxStdoutBytes:  sandbox.DefaultMaxStdoutBytes,
 		MaxOutputFiles:  sandbox.DefaultMaxOutputFiles,
 		MaxOutputBytes:  sandbox.DefaultMaxOutputBytes,
@@ -103,9 +103,9 @@ func FromEnv(get func(string) string) (Config, error) {
 			return Config{}, fmt.Errorf("RUNBOX_MAX_COMMAND_BYTES: %w", err)
 		}
 	}
-	if value := get("RUNBOX_MAX_INPUTS"); value != "" {
-		if cfg.MaxInputs, err = parseInt(value); err != nil {
-			return Config{}, fmt.Errorf("RUNBOX_MAX_INPUTS: %w", err)
+	if value := get("RUNBOX_MAX_ATTACHMENTS"); value != "" {
+		if cfg.MaxAttachments, err = parseInt(value); err != nil {
+			return Config{}, fmt.Errorf("RUNBOX_MAX_ATTACHMENTS: %w", err)
 		}
 	}
 	if value := get("RUNBOX_MAX_STDOUT_BYTES"); value != "" {
@@ -219,8 +219,8 @@ func (c Config) Validate() error {
 	if c.MaxCommandBytes <= 0 {
 		return fmt.Errorf("RUNBOX_MAX_COMMAND_BYTES must be positive")
 	}
-	if c.MaxInputs <= 0 {
-		return fmt.Errorf("RUNBOX_MAX_INPUTS must be positive")
+	if c.MaxAttachments <= 0 {
+		return fmt.Errorf("RUNBOX_MAX_ATTACHMENTS must be positive")
 	}
 	if c.MaxRequestBytes < c.MaxUploadBytes {
 		return fmt.Errorf("RUNBOX_MAX_REQUEST_BYTES must be >= RUNBOX_MAX_UPLOAD_BYTES")
@@ -257,7 +257,7 @@ func (c Config) Limits() sandbox.Limits {
 	return sandbox.Limits{
 		MaxUploadBytes:   c.MaxUploadBytes,
 		MaxCommandBytes:  c.MaxCommandBytes,
-		MaxInputs:        c.MaxInputs,
+		MaxAttachments:   c.MaxAttachments,
 		MaxStdoutBytes:   c.MaxStdoutBytes,
 		MaxOutputFiles:   c.MaxOutputFiles,
 		MaxOutputBytes:   c.MaxOutputBytes,

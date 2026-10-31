@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Renamed `RUNBOX_MAX_INPUTS` to `RUNBOX_MAX_ATTACHMENTS` and the capabilities
+  field `max_inputs` to `max_attachments`.
+- `POST /v1/files` now accepts only the `file` field; use
+  `POST /v1/files/batch` for multiple files.
+
 ## 0.2.1 — 2026-10-31
 
 Security patch release.
@@ -58,10 +65,10 @@ Initial extraction from the property-management platform's sandbox module.
 - Fail-closed Linux capability check; `RUNBOX_ALLOW_MISSING_CAPS` is a
   development-only override.
 - `/ready` storage readiness and `/metrics` Prometheus counters.
-- Bounded command length and input count (`RUNBOX_MAX_COMMAND_BYTES`,
-  `RUNBOX_MAX_INPUTS`).
+- Bounded command length and attachment count (`RUNBOX_MAX_COMMAND_BYTES`,
+  `RUNBOX_MAX_ATTACHMENTS`).
 - Graceful shutdown cancels in-flight commands after the configured budget.
-- Fuzz tests for file IDs and paths; boundary tests for nested outputs, output
+- Fuzz tests for paths and identities; boundary tests for nested outputs, output
   caps, upload overwrite, concurrent identities and readiness.
 - Full image with LibreOffice/Python/Node and a minimal image.
 - Read-only compose deployment with dropped capabilities and resource limits.

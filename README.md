@@ -355,7 +355,7 @@ Durations accept `30s`, `15m`, `7d` or bare seconds; sizes accept `20MiB`, `20MB
 | `RUNBOX_MAX_REQUEST_BYTES` | `200MiB` | HTTP body limit. |
 | `RUNBOX_MAX_UPLOAD_BYTES` | `20MiB` | Per-file limit. |
 | `RUNBOX_MAX_COMMAND_BYTES` | `64KiB` | Maximum command length. |
-| `RUNBOX_MAX_INPUTS` | `64` | Maximum multipart attachments per execution. |
+| `RUNBOX_MAX_ATTACHMENTS` | `64` | Maximum multipart attachments per execution. |
 | `RUNBOX_MAX_STDOUT_BYTES` | `200KiB` | Captured stdout+stderr limit; keeps the head and the tail. |
 | `RUNBOX_MAX_OUTPUT_FILES` | `20` | Files returned from one execution. |
 | `RUNBOX_MAX_OUTPUT_BYTES` | `200MiB` | Total output size returned from one execution. |

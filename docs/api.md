@@ -119,7 +119,7 @@ and paths never become labels.
   "limits": {
     "max_upload_bytes": 20971520,
     "max_command_bytes": 65536,
-    "max_inputs": 64,
+    "max_attachments": 64,
     "max_stdout_bytes": 204800,
     "max_output_files": 20,
     "max_output_bytes": 209715200,
@@ -179,7 +179,7 @@ files=@input.csv
 
 `files` parts are stored under `files/` before the command runs. The stored
 name is flattened to one path segment; refer to it as `files/<name>`. At most
-`RUNBOX_MAX_INPUTS` attachments are accepted.
+`RUNBOX_MAX_ATTACHMENTS` attachments are accepted.
 
 ### Response
 
@@ -227,9 +227,9 @@ curl -fsS -H "Authorization: Bearer $KEY" \
 {"path": "files/input.csv", "name": "input.csv", "size": 1280}
 ```
 
-The field may be named `file` or `files`. An existing file with the same name
-is replaced. The upload is written through a size-limited reader, so a lying
-`Content-Length` cannot fill the disk.
+The field must be named `file`. Use `/v1/files/batch` for multiple files. An
+existing file with the same name is replaced. The upload is written through a
+size-limited reader, so a lying `Content-Length` cannot fill the disk.
 
 ## POST /v1/files/batch
 
@@ -249,7 +249,9 @@ curl -fsS -H "Authorization: Bearer $KEY" \
 ```
 
 The request is bounded by `RUNBOX_MAX_BATCH_FILES` and
-`RUNBOX_MAX_REQUEST_BYTES`. Files stream to disk; none are buffered in memory.
+`RUNBOX_MAX_REQUEST_BYTES`, and each file by `RUNBOX_MAX_UPLOAD_BYTES`. Files
+stream to disk; none are buffered in memory. The batch is not a transaction:
+files saved before a later failure remain in `files/`.
 
 ## GET /v1/path?path=out/report.csv
 

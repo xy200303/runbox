@@ -81,7 +81,7 @@ type ListEntry struct {
 type Limits struct {
 	MaxUploadBytes   int64 `json:"max_upload_bytes"`
 	MaxCommandBytes  int64 `json:"max_command_bytes"`
-	MaxInputs        int   `json:"max_inputs"`
+	MaxAttachments   int   `json:"max_attachments"`
 	MaxStdoutBytes   int   `json:"max_stdout_bytes"`
 	MaxOutputFiles   int   `json:"max_output_files"`
 	MaxOutputBytes   int64 `json:"max_output_bytes"`

@@ -353,7 +353,7 @@ RUNBOX_ROOT/
 | `RUNBOX_MAX_REQUEST_BYTES` | `200MiB` | HTTP 请求体上限。 |
 | `RUNBOX_MAX_UPLOAD_BYTES` | `20MiB` | 单文件上限。 |
 | `RUNBOX_MAX_COMMAND_BYTES` | `64KiB` | 单条命令长度上限。 |
-| `RUNBOX_MAX_INPUTS` | `64` | 单次执行的 multipart 附件数量上限。 |
+| `RUNBOX_MAX_ATTACHMENTS` | `64` | 单次执行的 multipart 附件数量上限。 |
 | `RUNBOX_MAX_STDOUT_BYTES` | `200KiB` | 捕获的 stdout+stderr 上限，保留首尾。 |
 | `RUNBOX_MAX_OUTPUT_FILES` | `20` | 单次执行返回的产物数量。 |
 | `RUNBOX_MAX_OUTPUT_BYTES` | `200MiB` | 单次执行返回的产物总大小。 |
