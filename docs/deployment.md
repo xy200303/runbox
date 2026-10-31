@@ -4,7 +4,7 @@
 
 | Target | Contents | Rough size | Use |
 |---|---|---|---|
-| `full` (default) | Debian 12 slim, agent CLI, Python/Node, poppler, LibreOffice, CJK fonts, data libraries | ~1.4 GB unpacked | Document and spreadsheet work |
+| `full` (default) | Debian 12 slim, agent CLI, Python/Node, poppler, `build-essential`, LibreOffice, CJK fonts, data libraries | ~1.4 GB unpacked | Document work and native builds |
 | `minimal` | Debian 12 slim, agent CLI, Python/Node, poppler; no LibreOffice/CJK/data libraries | ~585 MB unpacked | Code/text workloads |
 | `toolbox` | minimal plus `build-essential` and development headers | minimal + ~300 MB | Packages that compile native extensions |
 

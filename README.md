@@ -450,7 +450,7 @@ Durations accept `30s`, `15m`, `7d` or bare seconds; sizes accept `20MiB`, `20MB
 | CJK fonts | yes | no | no |
 | Python document/data libraries | yes | no | no |
 | Node `xlsx`, `csv-parse`, `dayjs` | yes | no | no |
-| `build-essential` and development headers | no | no | yes |
+| `build-essential` and development headers | yes | no | yes |
 
 The `minimal` image is about 585 MB unpacked; `full` adds LibreOffice and data
 libraries and is about 1.4 GB unpacked. Pick `minimal` for code/text workloads

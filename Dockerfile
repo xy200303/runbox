@@ -1,7 +1,7 @@
 # Runtime images, in increasing size:
 #   minimal  Debian 12 slim + agent CLI toolbox + Python/Node (no LibreOffice)
-#   full     minimal + LibreOffice, CJK fonts and common data libraries
 #   toolbox  minimal + build-essential and development headers
+#   full     toolbox + LibreOffice, CJK fonts and common data libraries
 #
 # Debian slim keeps the base small and apt predictable, while still giving an
 # agent the usual Debian/Ubuntu layout: bash, apt, /usr/bin, Python, Node and
@@ -69,8 +69,7 @@ FROM runtime AS minimal
 COPY --from=tini /usr/bin/tini /usr/local/bin/tini
 ENTRYPOINT ["/usr/local/bin/tini", "--", "/usr/local/bin/runboxd"]
 
-# Optional image for packages that compile native extensions. It is kept out of
-# minimal/full so the default images stay small.
+# Compiler and development headers for packages that build native extensions.
 FROM minimal AS toolbox
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
@@ -78,9 +77,9 @@ RUN apt-get update \
       libssl-dev libffi-dev zlib1g-dev libjpeg-dev libmagic-dev \
  && rm -rf /var/lib/apt/lists/*
 
-# Default image. Adds LibreOffice, CJK fonts and common document/data
-# libraries used by agent sandboxes.
-FROM minimal AS full
+# Default image: everything in toolbox, plus LibreOffice, CJK fonts and common
+# document/data libraries used by agent sandboxes.
+FROM toolbox AS full
 ARG PIP_INDEX=https://pypi.org/simple
 ARG NPM_REGISTRY=https://registry.npmjs.org
 ENV PIP_INDEX_URL=${PIP_INDEX} NPM_CONFIG_REGISTRY=${NPM_REGISTRY}
