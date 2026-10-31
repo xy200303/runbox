@@ -15,7 +15,6 @@ Initial extraction from the property-management platform's sandbox module.
   configurable concurrency, timeouts and retention.
 - Timeouts kill the command's process group; deployments grant `CAP_KILL`, and
   the runtime images use tini as PID 1 to reap the killed tree.
-- Startup warns when required Linux capabilities are missing.
 - Symlink-aware path resolution; archive outside the writable workspace;
   workspace subdirectory repair.
 - Minimal command environment; no server secret leakage.

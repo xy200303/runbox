@@ -1,57 +1,221 @@
-# Runbox
+<p align="center">
+  <a href="https://github.com/xy200303/runbox">
+    <img src="docs/assets/banner.svg" alt="Runbox — Run in a box. 单容器，多身份。" width="100%">
+  </a>
+</p>
 
-**Run in a box.**
+<p align="center">
+  <a href="#快速开始">快速开始</a> ·
+  <a href="docs/api.md">API</a> ·
+  <a href="docs/deployment.md">部署</a> ·
+  <a href="docs/security.md">安全</a> ·
+  <a href="docs/comparison.md">对比</a> ·
+  <a href="examples/">示例</a> ·
+  <a href="README.md">English</a>
+</p>
 
-一个盒子，装下 Agent 的代码和文件——轻量、单容器的执行沙箱，给 AI Agent 用。
+<p align="center">
+  <a href="https://github.com/xy200303/runbox/actions/workflows/ci.yml"><img src="https://github.com/xy200303/runbox/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI 状态"></a>
+  <img src="https://img.shields.io/badge/version-0.1.0-2563EB?style=for-the-badge" alt="版本 0.1.0">
+  <img src="https://img.shields.io/badge/Go-1.23-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go 1.23">
+  <img src="https://img.shields.io/badge/license-MIT-16A34A?style=for-the-badge" alt="MIT 许可证">
+  <img src="https://img.shields.io/badge/docker-ready-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker">
+  <img src="https://img.shields.io/badge/platform-Linux-0F172A?style=for-the-badge&logo=linux&logoColor=white" alt="Linux">
+  <img src="https://img.shields.io/badge/PRs-welcome-34D399?style=for-the-badge" alt="欢迎 PR">
+</p>
 
-Agent 拿到一个可丢弃的 Linux 工作区：上传输入、执行 Python / Node / Shell、下载产物。Runbox 不托管 Agent、不跑模型循环；它是 Agent 调用的命令执行与文件后端。只有一个 Go 二进制、一个容器、一个卷；不挂 `docker.sock`，不需要编排器，也没有数据库。名字和口号就是字面意思：**run in a box**，一个盒子承载多个身份。
+<p align="center">
+  <sub><strong>3.8k</strong> 行 Go · <strong>0</strong> 个 Go 依赖 · <strong>1</strong> 个二进制 · <strong>1</strong> 个容器 · <strong>1</strong> 个卷</sub>
+</p>
 
-[English](README.md)
+---
 
-- **单容器、多身份。** Runbox 不为每个用户新建容器。HTTP runner 与执行环境共处一个长期运行的容器；每个身份用自己的 UID 和独立工作区。
-- **按身份隔离，也隔离文件。** 每个身份拥有工作区、配额和工作区之外的不可变归档。同一身份的调用串行，不同身份可并发。
-- **所有资源都有边界。** 上传大小、标准输出（保留首尾、内存有上限）、产物数量与大小、工作区配额、归档配额、执行超时、并发数、保留期。
-- **文件是一等公民。** 上传、带输入执行、列目录、按不透明 ID 或工作区路径下载、归档一份不可被沙箱改写的长期副本。
-- **路径处理防穿越。** 拒绝绝对路径、`..`、盘符和符号链接逃逸；符号链接不会作为产物返回。
-- **不泄漏服务端密钥。** 命令只拿到最小环境变量，runner 的 API Key 与进程环境不会被继承。
-- **仅标准库的 Go SDK。** 普通调用走 JSON，带附件时自动流式 multipart。
+**Runbox** 是给 Agent 执行命令、处理文件的轻量单容器沙箱。它给 Agent 一个可持久化的 Linux 工作区：上传输入、执行 Python / Node / Shell、下载产物。每个身份拥有独立 UID、私有工作区、配额和工作区之外的不可变归档——全部发生在**一个**长期运行的容器里。不为每个用户新建容器或虚拟机，不需要编排器，没有数据库，也不挂 `docker.sock`。
 
-> Runbox 本身不是强多租户边界。它依赖容器 namespace/cgroup 与按 UID 的文件权限。面对互相敌对的租户，请用 gVisor 或 microVM 运行。详见 [docs/security.md](docs/security.md)。
+名字就是字面意思：**run in a box**。box 跑的是 Agent 的代码、装的是 Agent 的文件，不是 Agent 本身。
 
-## 为什么是 Runbox
+> **Runbox 不是 Agent 运行时。** 它不托管 Agent、不跑模型循环；它是 Agent 通过 HTTP 调用的命令执行与文件后端。
 
-container-per-sandbox 类方案（OpenSandbox、CubeSandbox 的常见部署形态）通常为每个沙箱准备独立容器；microVM 类方案（E2B、microsandbox）更进一步，每个沙箱一台虚拟机。面对互相敌对的租户，这是正确的取舍；但在单机上，这意味着每个用户或任务多一个容器或虚拟机，往往还多一份 Python/LibreOffice。
+## 为什么是 Runbox？
 
-Runbox 采用 dify-sandbox 的形态：一个长期运行的容器，承载多个身份。每个身份在该容器里拥有稳定 UID 和独立工作区；隔离来自 Linux 凭据、文件权限、路径解析和配额，而不是“每个用户一个容器”。在这个形态之上，Runbox 补充了文件隔离层：按身份的工作区、配额、工作区之外的不可变 `keep/`、符号链接安全解析，以及有界输出通道。
+container-per-sandbox 类方案为每个沙箱准备独立容器；microVM 类方案更进一步，每个沙箱一台虚拟机。面对互相敌对的租户，这是正确的取舍；但在单机上，两者都很重：每个用户或任务多一个容器或虚拟机，往往还多一份 Python/LibreOffice，也多一份要调度和维护的东西。
 
-结果是单机友好的部署：一个二进制、一个容器、一个卷、没有调度器。适合内部 Agent 平台，或用户半可信的 SaaS。租户互相敌对时，把 Runbox 放到 gVisor 下，或一个信任域一个容器；不要把共享内核当成 microVM 边界。
+Runbox 采用 **dify-sandbox 的形态**：一个长期运行的容器，承载多个身份。隔离来自 Linux 凭据、文件权限、路径解析和配额，而不是“每个用户一个容器”。在这个形态之上，Runbox 补上了普通 per-task UID 沙箱没有的**文件隔离层**。
 
-### 名字
+| | 每个沙箱一个容器 | 每个沙箱一台 microVM | **Runbox** |
+|---|---|---|---|
+| 隔离单位 | 每个沙箱一个容器 | 每个沙箱一台虚拟机 | 单容器内 UID + 私有工作区 |
+| 每个身份新建运行时 | 是 | 是 | **否** |
+| 单机部署占用 | 控制面 + 多个容器 | KVM + 运行时 + VM 镜像 | **一个二进制、一个容器、一个卷** |
+| 每个身份的冷启动 | 容器启动或池中取出 | VM 启动或快照恢复 | **无** |
+| 文件隔离 | 依赖卷或 API | 强 | **内置，按身份隔离** |
+| 适合 | 多机、更强的单沙箱隔离 | 敌对租户 | **内部或半可信、单机** |
 
-**Runbox** 就是字面意思：*run in a box*。口号是 **Run in a box.**。box 跑的是 Agent 的代码、装的是 Agent 的文件，不是 Agent 本身；box 是那个单容器，identities 是里面的多个调用方。它刻意不是“每个用户一个容器”，也不是“每个沙箱一台虚拟机”。
+需要把沙箱放在应用旁边、命令是半可信的、工作负载是 Python / Node / Shell、又需要按身份隔离文件时，选 Runbox。如果租户互相敌对，请把 Runbox 放到 gVisor 或 microVM 下，不要把共享内核当成 VM 边界。
+
+## 特性
+
+| | 说明 |
+|---|---|
+| **单容器、多身份** | HTTP runner 与执行环境共处一个长期运行的容器。每个身份用自己的 UID；同一身份的调用串行，不同身份可并发。 |
+| **按身份隔离文件** | 私有工作区、工作区配额、可写目录之外的不可变归档。符号链接无法用来读取或带出 runner 拥有的文件。 |
+| **工作区可持久化** | 安装过的包和中间文件跨调用保留。`HOME`、XDG 目录、pip/npm 前缀都在工作区内，并计入配额。 |
+| **交付文件不可篡改** | 执行期间写入 `out/` 的文件以不透明 file ID 返回。归档会复制进可写目录之外的 `keep/`，后续命令改不了已交付文件。 |
+| **所有资源都有边界** | 上传大小、命令长度、输入数量、stdout（保留首尾）、产物数量与大小、工作区配额、归档配额、超时、并发和保留期。 |
+| **文件是一等公民** | 上传、带输入执行、列目录、按不透明 ID 或工作区路径下载、归档、删除。带附件走流式 multipart，普通调用走 JSON。 |
+| **默认 fail-closed** | 只读根文件系统、丢弃能力、`no-new-privileges`、tini 作为 PID 1。以 root 启动却缺少所需能力时拒绝启动。 |
+| **自带可观测性** | `/ready` 就绪检查、`/metrics` Prometheus 指标、文本或 JSON 结构化日志。 |
+| **小到可以通读** | 仅标准库的 Go 实现，没有数据库、消息队列和调度器。 |
 
 ## 快速开始
 
+### 1. 启动
+
 ```bash
+git clone https://github.com/xy200303/runbox.git
+cd runbox
 cp .env.example .env
-# 修改 .env，写入足够长的 RUNBOX_API_KEY（openssl rand -hex 32）
+# 写入足够长的 RUNBOX_API_KEY：openssl rand -hex 32
 docker compose up -d --build
 curl -fsS http://localhost:8099/health
 ```
 
-默认镜像包含 LibreOffice、Python 和 Node。不要 Office 转换能力时构建精简镜像：
+```json
+{"status":"healthy","version":"dev","uptime_seconds":2}
+```
+
+默认镜像包含 LibreOffice、Python 和 Node。只做文本/代码任务、不需要 Office 转换时，构建精简镜像：
 
 ```bash
 docker build --target minimal -t runbox:minimal .
 ```
 
-本机开发（Windows / macOS / Linux；只有 Linux 有 UID 隔离）：
+### 2. 执行命令
+
+```bash
+export RUNBOX_API_KEY="$(grep '^RUNBOX_API_KEY=' .env | cut -d= -f2)"
+
+curl -fsS http://localhost:8099/v1/exec \
+  -H "Authorization: Bearer $RUNBOX_API_KEY" \
+  -H "X-Runbox-Namespace: team-a" \
+  -H "X-Runbox-Principal: user-42" \
+  -H "Content-Type: application/json" \
+  -d '{"command":"echo hello from runbox"}'
+```
+
+```json
+{"exit_code":0,"stdout":"hello from runbox\n","files":[],"duration_ms":3}
+```
+
+### 3. 产出并取回文件
+
+```bash
+curl -fsS http://localhost:8099/v1/exec \
+  -H "Authorization: Bearer $RUNBOX_API_KEY" \
+  -H "X-Runbox-Namespace: team-a" \
+  -H "X-Runbox-Principal: user-42" \
+  -H "Content-Type: application/json" \
+  -d '{"command":"mkdir -p out && echo hello > out/report.txt"}'
+```
+
+响应里会返回 `out/report.txt` 的 `file_id`。用 `GET /v1/files/{id}` 下载，或用 `POST /v1/files/{id}/keep` 归档一份不可变副本。
+
+### 4. 或从源码运行
+
+Windows、macOS 和 Linux 都可以用于开发；UID 隔离只在 Linux 上生效。
 
 ```bash
 make run
 # 或者
 RUNBOX_ALLOW_ANONYMOUS=1 RUNBOX_ROOT=./.runbox go run ./cmd/runboxd
 ```
+
+## 在 Go 中使用
+
+```go
+import (
+    "context"
+    "os"
+    "time"
+
+    "github.com/xy200303/runbox/sandbox"
+)
+
+client, err := sandbox.NewClient(sandbox.ClientOptions{
+    BaseURL:  "http://localhost:8099",
+    APIKey:   os.Getenv("RUNBOX_API_KEY"),
+    Identity: sandbox.ScopedIdentity("team-a", "user-42"),
+})
+if err != nil {
+    return err
+}
+
+result, err := client.Run(context.Background(), sandbox.ExecRequest{
+    Command: `python3 -c "print(6 * 7)"`,
+    Timeout: 30 * time.Second,
+})
+if err != nil {
+    return err
+}
+
+// ExitCode 非零是正常结果：命令执行了，并选择了非零退出。
+fmt.Println(result.Stdout)
+for _, file := range result.Files {
+    out, err := os.Create(filepath.Base(file.Name))
+    if err != nil {
+        return err
+    }
+    if _, err := client.DownloadTo(context.Background(), file.FileID, out); err != nil {
+        out.Close()
+        return err
+    }
+    out.Close()
+}
+```
+
+附件直接从 `io.Reader` 流式上传：
+
+```go
+result, err := client.Run(ctx, sandbox.ExecRequest{
+    Command: "python3 analyze.py files/input.csv",
+    Files:   []sandbox.FileUpload{{Name: "input.csv", Reader: file}},
+})
+```
+
+`Client` 同时实现 `sandbox.Backend`：每次调用单独传身份时用 `Exec(ctx, identity, …)`；绑定单一身份时用 `Run`。
+
+## 在 Python 或 curl 中使用
+
+仓库自带仅依赖标准库的 Python 客户端和 CLI：
+
+```bash
+RUNBOX_URL=http://localhost:8099 \
+RUNBOX_API_KEY="$RUNBOX_API_KEY" \
+RUNBOX_NAMESPACE=team-a RUNBOX_PRINCIPAL=user-42 \
+python3 examples/python/runbox_client.py exec "echo hello"
+```
+
+完整的 curl 走查（上传、执行、列目录、下载、归档）见 [`examples/curl.sh`](examples/curl.sh)。更多客户端：[`examples/go`](examples/go)、[`examples/python`](examples/python)。
+
+## 身份模型
+
+每个请求必须且只能携带一种身份形式：
+
+| 模式 | 请求头 | 适用场景 |
+|---|---|---|
+| 单一 token | `X-Runbox-Identity: <token>` | 应用本身已经能生成不透明的主体 ID。 |
+| 租户 + 用户 | `X-Runbox-Namespace: <namespace>`<br>`X-Runbox-Principal: <principal>` | 需要区分租户和用户，并希望保留元数据供后续租户级操作使用。 |
+
+规则：
+
+- 同时传两种形式，或只传 scoped 形式的一半，返回 `400`。
+- token 为 1–256 个可见 ASCII 字符，不能包含空格。
+- namespace 和 principal 各为 1–128 个字符，字符集 `[A-Za-z0-9._-]`。
+- 两种形式都会规范化为一个 canonical SHA-256 key，存储路径使用该 key。
+- 原始 token 不落盘；scoped 的 namespace/principal 作为身份元数据保存在 `state/identities/<key>.json`。
+- file ID 绑定所属身份；访问其他身份的 file ID 返回 `403`。
+
+鉴权使用 `Authorization: Bearer <RUNBOX_API_KEY>`。`/health` 和 `/ready` 不鉴权，其余接口都需要 Bearer token。
 
 ## 接口一览
 
@@ -69,63 +233,63 @@ RUNBOX_ALLOW_ANONYMOUS=1 RUNBOX_ROOT=./.runbox go run ./cmd/runboxd
 | GET | `/v1/list?path=out` | 列工作区目录 |
 | DELETE | `/v1/workspace[?purge=true]` | 删除工作区（可选连归档一起删） |
 
-身份二选一：
-
-```http
-X-Runbox-Identity: 01J...
-```
-
-或：
-
-```http
-X-Runbox-Namespace: tenant-a
-X-Runbox-Principal: user-42
-```
-
-同时传两种形式会被拒绝。鉴权：`Authorization: Bearer <key>`。
-
 完整请求/响应说明见 [docs/api.md](docs/api.md)。
 
-## Go SDK
+## 工作机制
 
-```go
-client, _ := sandbox.NewClient(sandbox.ClientOptions{
-    BaseURL:   "http://localhost:8099",
-    APIKey:    os.Getenv("RUNBOX_API_KEY"),
-    Identity: sandbox.ScopedIdentity("team-a", "user-42"),
-})
-result, err := client.Run(ctx, sandbox.ExecRequest{
-    Command: `python3 -c "open('out/report.csv','w').write('a,b\n1,2\n')"`,
-    Timeout: 30 * time.Second,
-})
-for _, file := range result.Files {
-    out, _ := os.Create(filepath.Base(file.Name))
-    client.DownloadTo(ctx, file.FileID, out)
-    out.Close()
-}
+```mermaid
+flowchart LR
+    A["Agent 或应用"] -->|"HTTP · Bearer · X-Runbox-*"| B["runboxd"]
+    B -->|"fork/exec"| C["/bin/sh -c 命令 · UID 20000+n"]
+    B --> D[("workspaces/identity-key · 可写")]
+    B --> E[("keep/identity-key · 不可变")]
 ```
 
-附件直接从 `io.Reader` 流式上传：
-
-```go
-result, err := client.Run(ctx, sandbox.ExecRequest{
-    Command: "python3 analyze.py files/input.csv",
-    Files:   []sandbox.FileUpload{{Name: "input.csv", Reader: file}},
-})
+```text
+RUNBOX_ROOT/
+├── workspaces/<identity-key>/       0750，属主为该身份的 UID
+│   ├── files/                       上传的输入
+│   ├── out/                         上一次执行返回的产物
+│   ├── .local/  .npm-global/        持久的 pip / npm 安装
+│   ├── .cache/  .config/  .tmp/     持久的 XDG 状态与临时文件
+│   └── ...
+├── keep/<identity-key>/             不可变交付，属主为 runner
+└── state/
+    ├── uids/<identity-key>          稳定的 UID 分配
+    └── identities/<key>.json        身份元数据（绝不包含 token）
 ```
 
-`Identity` 支持单一 token（`sandbox.TokenIdentity`）或 namespace + principal
-（`sandbox.ScopedIdentity`）。两种形式都会规范化为一个 canonical 存储 key；
-namespace/principal 会作为元数据保留，供后续租户级操作使用。
+- 命令在独立进程组、以该身份的 UID 执行；超时只杀进程组，不动容器。
+- stdout 使用首尾有界缓冲，命令打印几个 GB 也不会撑爆内存。
+- 执行期间写入 `out/` 的文件以 file ID 返回。交付时复制进可写工作区之外的 `keep/`；`?purge=true` 会连归档一起删除。
+- 后台清理任务删除超过保留期未活动的工作区；`keep/` 不受影响。
+- API Key 常量时间比较；身份只校验、不“净化”——净化会把不同身份映射到同一个工作区。
 
-`Client` 同时实现 `sandbox.Backend`：每次调用单独传身份时用
-`Exec(ctx, identity, …)`；绑定单一身份时用 `Run`。
+更多细节：[docs/architecture.md](docs/architecture.md)。
 
-完整示例：[examples/go](examples/go)。仅标准库的 Python 客户端：[examples/python](examples/python)。curl 走查：[examples/curl.sh](examples/curl.sh)。
+## 安全
 
-## 配置
+- 路径解析拒绝 `..`、绝对路径、Windows 盘符和符号链接逃逸。否则 Agent 在工作区里放一个指向 `/etc/shadow` 的链接，root 身份的 runner 就会替它读取。
+- 命令不继承 runner 的环境变量，包括 API Key。
+- compose 配置使用只读根文件系统、`cap_drop: ALL`，仅补 `CHOWN`、`FOWNER`、`SETUID`、`SETGID`、`DAC_OVERRIDE` 和 `KILL`，启用 `no-new-privileges`，并限制内存、CPU 和 pids。
+- 镜像以 tini 作为 PID 1，回收被终止的命令树。
+- 以 root 启动却缺少所需能力时，进程直接拒绝启动。`RUNBOX_ALLOW_MISSING_CAPS=1` 仅限开发。
 
-全部通过环境变量。时长支持 `30s`、`15m`、`7d` 或纯秒数；大小支持 `20MiB`、`20MB`、`1GiB` 或字节数。
+> Runbox 本身不是强多租户边界。它依赖容器 namespace/cgroup 与按 UID 的文件权限。面对互相敌对的租户，请用 gVisor 或 microVM 运行。详见 [docs/security.md](docs/security.md)。
+
+## 运维
+
+- `/ready` 检查数据目录存在、state 目录可写。
+- `/metrics` 暴露有界的 Prometheus 计数器：请求、执行、超时、繁忙、上传/下载字节数、归档、工作区删除、活跃命令和运行时长。
+- 优雅退出会在预算内取消在途命令，并杀掉对应进程组。
+- 日志支持文本或 JSON（`RUNBOX_LOG_FORMAT`）。
+
+商业部署清单见 [docs/production.md](docs/production.md)：SLO、容量、配额、密钥、gVisor、多副本和故障处理。
+
+<details>
+<summary><strong>完整配置</strong></summary>
+
+时长支持 `30s`、`15m`、`7d` 或纯秒数；大小支持 `20MiB`、`20MB`、`1GiB` 或字节数。
 
 | 变量 | 默认值 | 含义 |
 |---|---|---|
@@ -153,40 +317,7 @@ namespace/principal 会作为元数据保留，供后续租户级操作使用。
 | `RUNBOX_TLS_CERT` / `RUNBOX_TLS_KEY` | — | 进程内终止 TLS；通常更推荐反向代理。 |
 | `RUNBOX_LOG_FORMAT` | `text` | `text` 或 `json`。 |
 
-## 工作机制
-
-```
-client ──HTTP──► runboxd ──fork/exec──► /bin/sh -c "…"  (UID 20000+n)
-                    │                        │
-                    ├─ /workspace/workspaces/<identity-key>/  可写，属主为该 UID
-                    └─ /workspace/keep/<identity-key>/        只读交付，属主为 runner
-```
-
-- 每个身份一个工作区，跨调用保留，安装过的包和中间文件都还在。
-- 身份可以是单一 token，也可以是 namespace + principal；两者规范化为同一个 canonical key。scoped 的 namespace/principal 作为元数据保留，供租户级操作；token 不落盘。
-- `HOME`、`XDG_*`、pip/npm 前缀都指向工作区，安装结果会保留并计入配额。
-- 命令在独立进程组、以该身份 UID 执行；超时只杀进程组，不动容器。
-- stdout 使用首尾有界缓冲，命令打印几个 GB 也不会撑爆内存。
-- 执行期间写入 `out/` 的文件作为产物返回。交付时复制进 `keep/`，位于可写工作区之外，后续命令改不了。
-- 后台清理任务删除超过保留期未活动的工作区；`keep/` 不受影响。
-
-更多细节：[docs/architecture.md](docs/architecture.md)。
-
-## 安全
-
-- 路径解析拒绝 `..`、绝对路径、Windows 盘符和符号链接逃逸。否则 Agent 在 `out/` 里放一个指向 `/etc/shadow` 的链接，root 身份的 runner 就会替它读取。
-- 命令不继承 runner 的环境变量。
-- compose 配置只读根、`cap_drop: ALL`，仅补 `CHOWN`、`FOWNER`、`SETUID`、`SETGID`、`DAC_OVERRIDE` 和 `KILL`，启用 `no-new-privileges`，并限制内存、CPU、pids。镜像以 tini 作为 PID 1，回收被终止的命令树。
-- API Key 常量时间比较；身份只校验不「净化」——净化会把不同身份映射到同一个工作区。
-- 归档文件属主是 runner，位于工作区之外，沙箱身份无法改写已交付文件。
-
-已知边界与隔离升级路径（gVisor、microVM、网络策略）：[docs/security.md](docs/security.md)。
-
-## 生产使用
-
-`/ready` 检查数据目录存在、state 目录可写；`/metrics` 暴露有界的 Prometheus 计数器（请求、执行、超时、繁忙、字节数、归档、活跃命令）。以 root 启动时，如果缺少 `CHOWN`、`FOWNER`、`SETUID`、`SETGID`、`DAC_OVERRIDE` 或 `KILL`，进程会直接拒绝启动。
-
-商业部署清单见 [docs/production.md](docs/production.md)：SLO、容量、配额、密钥、gVisor、多副本和故障处理。
+</details>
 
 ## 镜像内容
 
@@ -205,7 +336,7 @@ client ──HTTP──► runboxd ──fork/exec──► /bin/sh -c "…"  (U
 
 | | Runbox | container-per-sandbox（OpenSandbox / CubeSandbox） | microVM（E2B / microsandbox） |
 |---|---|---|---|
-| 隔离单位 | 单容器内 UID + 独立工作区 | 每个沙箱一个容器（或池中一个槽位） | 每个沙箱一台虚拟机 |
+| 隔离单位 | 单容器内 UID + 私有工作区 | 每个沙箱一个容器（或池中一个槽位） | 每个沙箱一台虚拟机 |
 | 每个用户新建容器/VM | 否 | 是 | 是 |
 | 单机部署占用 | 一个二进制、一个容器、一个卷 | 控制面 + 多个容器 | KVM + 运行时 + VM 镜像 |
 | 每个身份的启动成本 | 无容器/VM 启动 | 容器启动或池中取出 | VM 启动或快照恢复 |
@@ -214,16 +345,69 @@ client ──HTTP──► runboxd ──fork/exec──► /bin/sh -c "…"  (U
 
 OpenSandbox、CubeSandbox 是带控制面的项目，支持不同部署形态；这一列描述的是常见的 container-per-sandbox 模式，不代表其所有模式。gVisor、Dify 的完整对比见 [docs/comparison.md](docs/comparison.md)。
 
-最接近的先例是 **dify-sandbox**：一个容器 + 每任务 UID。Runbox 沿用这个形态，并补上上面说的按身份文件隔离。
+最接近的先例是 **dify-sandbox**：一个容器 + 每任务 UID。Runbox 沿用这个形态，并补上前面说的按身份文件隔离。
 
-## 限制与路线
+## 常见问题
 
-- 没有内置出网管控；不允许命令访问互联网时请配网络策略/防火墙。
-- 不支持 HTTP Range，大文件从头流式下载。
-- 工作区是单 runner 本地的。多副本需要按身份做粘性路由或共享存储。
-- 没有自定义 seccomp profile，只有 Docker 默认值；下一步建议上 gVisor。
-- `keep/` 有单身份配额，但不会自动过期。
+<details>
+<summary><strong>Runbox 是 Agent 运行时吗？</strong></summary>
+
+不是。Runbox 不托管 Agent、不调用模型、不跑工作流循环。它只执行命令、搬运文件；运行什么、什么时候运行，由你的 Agent 框架决定。
+
+</details>
+
+<details>
+<summary><strong>每个用户都会新建容器吗？</strong></summary>
+
+不会。所有身份共享一个长期运行的容器，每个身份在里面拥有一个 UID 和私有工作区。这正是它能单机部署的原因。
+
+</details>
+
+<details>
+<summary><strong>可以执行不受信任的代码吗？</strong></summary>
+
+不能把它当作强多租户边界。Runbox 使用容器的 namespace/cgroup 与按 UID 的文件权限，内核是共享的。面对敌对租户，请放到 gVisor 或 microVM 下运行。
+
+</details>
+
+<details>
+<summary><strong>和 Dify 的 sandbox 有什么区别？</strong></summary>
+
+Dify 的 sandbox 是 Dify 技术栈的一部分，按任务隔离文件。Runbox 是独立服务，提供稳定的 HTTP 契约，并增加了按身份的工作区、配额、不可变归档和符号链接安全解析。
+
+</details>
+
+<details>
+<summary><strong>支持 Windows 或 macOS 吗？</strong></summary>
+
+开发可以。生产隔离只支持 Linux，因为按身份 UID 隔离依赖 Linux 凭据和文件属主。
+
+</details>
+
+## 路线图
+
+- [ ] 出网策略钩子，用于禁止命令访问互联网
+- [ ] 大文件下载支持 HTTP Range
+- [ ] 多副本部署所需的共享存储或按身份路由
+- [ ] 可选的按身份硬磁盘配额
+- [ ] 维护中的 seccomp profile 与 gVisor 部署配方
+- [ ] 租户管理 API：namespace 级用量、配额与清理
+- [ ] 发布容器镜像与带 tag 的 Go module
+
+## 贡献
+
+欢迎提交 Issue 和 Pull Request。提交 PR 前请运行：
+
+```bash
+make check   # gofmt、go vet、go test -race
+```
+
+开发流程见 [CONTRIBUTING.md](CONTRIBUTING.md)，安全问题报告见 [SECURITY.md](SECURITY.md)。
 
 ## 许可证
 
-MIT。
+MIT，见 [LICENSE](LICENSE)。
+
+<p align="center">
+  <sub><strong>Run in a box.</strong> 如果 Runbox 对你有用，点一个 star 能让更多人找到它。</sub>
+</p>

@@ -1,69 +1,128 @@
-# Runbox
+<p align="center">
+  <a href="https://github.com/xy200303/runbox">
+    <img src="docs/assets/banner.svg" alt="Runbox — Run in a box. One container, many identities." width="100%">
+  </a>
+</p>
 
-**Run in a box.**
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="docs/api.md">API</a> ·
+  <a href="docs/deployment.md">Deployment</a> ·
+  <a href="docs/security.md">Security</a> ·
+  <a href="docs/comparison.md">Comparison</a> ·
+  <a href="examples/">Examples</a> ·
+  <a href="README.zh-CN.md">简体中文</a>
+</p>
 
-One box for agent code and files — a lightweight, single-container execution sandbox for AI agents.
+<p align="center">
+  <a href="https://github.com/xy200303/runbox/actions/workflows/ci.yml"><img src="https://github.com/xy200303/runbox/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
+  <img src="https://img.shields.io/badge/version-0.1.0-2563EB?style=for-the-badge" alt="Version 0.1.0">
+  <img src="https://img.shields.io/badge/Go-1.23-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go 1.23">
+  <img src="https://img.shields.io/badge/license-MIT-16A34A?style=for-the-badge" alt="MIT license">
+  <img src="https://img.shields.io/badge/docker-ready-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker ready">
+  <img src="https://img.shields.io/badge/platform-Linux-0F172A?style=for-the-badge&logo=linux&logoColor=white" alt="Linux">
+  <img src="https://img.shields.io/badge/PRs-welcome-34D399?style=for-the-badge" alt="PRs welcome">
+</p>
 
-Runbox gives an agent a disposable Linux workspace: upload inputs, run Python, Node or shell commands, download the artifacts. It does not host agents or run a model loop; it is the execution and file backend the agent calls. One Go binary, one container, one volume — no `docker.sock`, no orchestrator, no database. The name and slogan are literal: **run in a box**, one box for many identities.
+<p align="center">
+  <sub><strong>3.8k</strong> lines of Go · <strong>0</strong> Go dependencies · <strong>1</strong> binary · <strong>1</strong> container · <strong>1</strong> volume</sub>
+</p>
 
-[中文说明](README.zh-CN.md)
+---
 
-- **One container, many identities.** Runbox does not create a container per user. The HTTP runner and the execution environment share one long-lived container; each identity runs under its own UID and gets a private workspace.
-- **Per-identity isolation, including files.** Each identity gets a workspace, a quota and an immutable archive outside the writable tree. Calls for one identity are serialized; different identities run concurrently.
-- **Bounded everything.** Upload size, captured stdout (head+tail, memory-bounded), output count and size, workspace quota, archive quota, command timeout, concurrency and retention.
-- **Files are first-class.** Upload, execute with inputs, list, download by opaque ID or workspace path, and archive an immutable copy outside the user-writable workspace.
-- **Safe path handling.** Absolute paths, `..`, drive letters and symlink escapes are rejected; symlinks are not collected as outputs.
-- **No secret leakage.** Commands receive a minimal environment; the runner's API key and process environment are not inherited.
-- **Stdlib-only Go SDK.** JSON for plain calls, streaming multipart when files are attached.
+**Runbox** is a lightweight, single-container sandbox for agent commands and files. It gives an agent a persistent Linux workspace: upload inputs, run Python, Node or shell commands, download the artifacts. Each identity gets its own UID, private workspace, quotas and immutable archive — inside **one** long-lived container. No container or VM per user, no orchestrator, no database, no `docker.sock`.
 
-> Runbox is not a strong multi-tenant boundary on its own. It relies on the container's namespaces/cgroups plus per-UID file permissions. For hostile tenants, run it under gVisor or a microVM. See [docs/security.md](docs/security.md).
+The name is literal: **run in a box**. The box runs agent code and holds agent files; it does not run the agent itself.
 
-## Why Runbox
+> **Runbox is not an agent runtime.** It does not host agents or run a model loop. It is the execution and file backend your agent calls over HTTP.
 
-Container-per-sandbox platforms (the common deployment of OpenSandbox and
-CubeSandbox, for example) isolate each sandbox in its own container; microVM
-platforms (E2B, microsandbox) go further with a VM per sandbox. That is the
-right trade-off for mutually hostile tenants, but on a single machine it means
-one more container or VM — and often another copy of Python/LibreOffice — per
-user or task.
+## Why Runbox?
 
-Runbox follows the dify-sandbox shape instead: one long-lived container, many
-identities. Each identity gets a stable UID and a private workspace inside that
-container; isolation comes from Linux credentials, file modes, path resolution
-and quotas, not from a new container per user. On top of that shape Runbox adds
-a file isolation layer: per-identity workspace, per-identity quota, immutable
-`keep/` outside the writable tree, symlink-safe reads and a bounded output
-channel.
+Container-per-sandbox platforms isolate every sandbox in its own container. MicroVM platforms go further with a VM per sandbox. Both are the right trade-off for mutually hostile tenants — and both are heavy on a single machine: one more container or VM per user, often another copy of Python/LibreOffice, and another thing to schedule.
 
-The result is a single-machine-friendly deployment: one binary, one container,
-one volume, no scheduler. Choose it for an internal agent platform or a SaaS
-with semi-trusted users. When tenants are mutually hostile, run Runbox under
-gVisor or one container per trust domain; do not treat the shared kernel as a
-microVM boundary.
+Runbox takes the **dify-sandbox shape**: one long-lived container, many identities. Isolation comes from Linux credentials, file modes, path resolution and quotas — not from a new container per user. On top of that shape, Runbox adds a file isolation layer that a plain per-task UID sandbox does not have.
 
-### The name
+| | Container per sandbox | MicroVM per sandbox | **Runbox** |
+|---|---|---|---|
+| Isolation unit | one container per sandbox | one VM per sandbox | UID + private workspace in one container |
+| New runtime per identity | yes | yes | **no** |
+| Single-machine footprint | control plane + many containers | KVM + runtime + VM images | **one binary, one container, one volume** |
+| Cold start per identity | container start or pool checkout | VM boot or snapshot restore | **none** |
+| File isolation | volume or API per sandbox | strong | **built-in per identity** |
+| Best fit | multi-node, stronger per-sandbox isolation | hostile tenants | **internal or semi-trusted, single machine** |
 
-**Runbox** is literal: *run in a box*. The slogan is **Run in a box.** The box
-runs agent code and holds agent files; it does not run the agent itself. The box
-is the single container, and identities are the many callers inside it. It is
-deliberately not one container per user, and not one VM per sandbox.
+Choose Runbox when you want one container next to your application, semi-trusted commands, Python/Node/shell workloads, and per-identity file isolation without operating a sandbox platform. If tenants are mutually hostile, run Runbox under gVisor or a microVM instead of treating the shared kernel as a VM boundary.
+
+## Features
+
+| | What you get |
+|---|---|
+| **One container, many identities** | The HTTP runner and the execution environment share one long-lived container. Each identity runs under its own UID; calls for one identity are serialized, different identities run concurrently. |
+| **Per-identity file isolation** | A private workspace, a workspace quota and an immutable archive outside the writable tree. Symlinks cannot be used to read or exfiltrate runner-owned files. |
+| **Persistent workspaces** | Installed packages and intermediate files survive across calls. `HOME`, XDG directories and pip/npm prefixes all point inside the workspace and count toward the quota. |
+| **Immutable deliverables** | Files produced under `out/` are returned as opaque file IDs. Archiving copies them into `keep/`, outside the writable tree, so later commands cannot alter a delivered file. |
+| **Bounded everything** | Upload size, command length, input count, captured stdout (head + tail), output count and size, workspace quota, archive quota, timeout, concurrency and retention. |
+| **Files are first-class** | Upload, execute with inputs, list, download by opaque ID or workspace path, archive, delete. Attachments stream as multipart; plain calls use JSON. |
+| **Fail-closed hardening** | Read-only root filesystem, dropped capabilities, `no-new-privileges`, tini as PID 1. Startup refuses to run as root without the capabilities it needs. |
+| **Observable by default** | `/ready` readiness, Prometheus metrics at `/metrics`, structured text or JSON request logs. |
+| **Small enough to audit** | Stdlib-only Go implementation, no database, no message queue, no scheduler. |
 
 ## Quick start
 
+### 1. Start the runner
+
 ```bash
+git clone https://github.com/xy200303/runbox.git
+cd runbox
 cp .env.example .env
-# edit .env and set a long RUNBOX_API_KEY (openssl rand -hex 32)
+# set RUNBOX_API_KEY to a long random value: openssl rand -hex 32
 docker compose up -d --build
 curl -fsS http://localhost:8099/health
 ```
 
-The default image includes LibreOffice, Python and Node. A smaller image without LibreOffice:
+```json
+{"status":"healthy","version":"dev","uptime_seconds":2}
+```
+
+The default image includes LibreOffice, Python and Node. For text/code workloads that do not need Office conversion, build the smaller image:
 
 ```bash
 docker build --target minimal -t runbox:minimal .
 ```
 
-Run locally (Windows, macOS or Linux; UID isolation only on Linux):
+### 2. Run a command
+
+```bash
+export RUNBOX_API_KEY="$(grep '^RUNBOX_API_KEY=' .env | cut -d= -f2)"
+
+curl -fsS http://localhost:8099/v1/exec \
+  -H "Authorization: Bearer $RUNBOX_API_KEY" \
+  -H "X-Runbox-Namespace: team-a" \
+  -H "X-Runbox-Principal: user-42" \
+  -H "Content-Type: application/json" \
+  -d '{"command":"echo hello from runbox"}'
+```
+
+```json
+{"exit_code":0,"stdout":"hello from runbox\n","files":[],"duration_ms":3}
+```
+
+### 3. Produce and fetch a file
+
+```bash
+curl -fsS http://localhost:8099/v1/exec \
+  -H "Authorization: Bearer $RUNBOX_API_KEY" \
+  -H "X-Runbox-Namespace: team-a" \
+  -H "X-Runbox-Principal: user-42" \
+  -H "Content-Type: application/json" \
+  -d '{"command":"mkdir -p out && echo hello > out/report.txt"}'
+```
+
+The response contains a `file_id` for `out/report.txt`. Download it with `GET /v1/files/{id}`, or archive an immutable copy with `POST /v1/files/{id}/keep`.
+
+### 4. Or run from source
+
+Windows, macOS and Linux are supported for development. UID isolation is Linux-only.
 
 ```bash
 make run
@@ -71,7 +130,94 @@ make run
 RUNBOX_ALLOW_ANONYMOUS=1 RUNBOX_ROOT=./.runbox go run ./cmd/runboxd
 ```
 
-## API in one table
+## Use from Go
+
+```go
+import (
+    "context"
+    "os"
+    "time"
+
+    "github.com/xy200303/runbox/sandbox"
+)
+
+client, err := sandbox.NewClient(sandbox.ClientOptions{
+    BaseURL:  "http://localhost:8099",
+    APIKey:   os.Getenv("RUNBOX_API_KEY"),
+    Identity: sandbox.ScopedIdentity("team-a", "user-42"),
+})
+if err != nil {
+    return err
+}
+
+result, err := client.Run(context.Background(), sandbox.ExecRequest{
+    Command: `python3 -c "print(6 * 7)"`,
+    Timeout: 30 * time.Second,
+})
+if err != nil {
+    return err
+}
+
+// result.ExitCode is a normal result: the command ran and chose to exit.
+fmt.Println(result.Stdout)
+for _, file := range result.Files {
+    out, err := os.Create(filepath.Base(file.Name))
+    if err != nil {
+        return err
+    }
+    if _, err := client.DownloadTo(context.Background(), file.FileID, out); err != nil {
+        out.Close()
+        return err
+    }
+    out.Close()
+}
+```
+
+Attachments stream straight from an `io.Reader`:
+
+```go
+result, err := client.Run(ctx, sandbox.ExecRequest{
+    Command: "python3 analyze.py files/input.csv",
+    Files:   []sandbox.FileUpload{{Name: "input.csv", Reader: file}},
+})
+```
+
+`Client` also implements `sandbox.Backend`: use `Exec(ctx, identity, …)` when the identity is passed per call, or `Run` with a client bound to one identity.
+
+## Use from Python or curl
+
+The repository ships a stdlib-only Python client and CLI:
+
+```bash
+RUNBOX_URL=http://localhost:8099 \
+RUNBOX_API_KEY="$RUNBOX_API_KEY" \
+RUNBOX_NAMESPACE=team-a RUNBOX_PRINCIPAL=user-42 \
+python3 examples/python/runbox_client.py exec "echo hello"
+```
+
+A full curl walkthrough — upload, exec, list, download, archive — is in [`examples/curl.sh`](examples/curl.sh). More clients: [`examples/go`](examples/go) and [`examples/python`](examples/python).
+
+## Identity model
+
+Every request carries exactly one identity form:
+
+| Mode | Headers | Use when |
+|---|---|---|
+| Single token | `X-Runbox-Identity: <token>` | Your application already mints an opaque subject ID. |
+| Scoped | `X-Runbox-Namespace: <namespace>`<br>`X-Runbox-Principal: <principal>` | You need tenant + user, and want metadata for tenant-level operations later. |
+
+Rules:
+
+- Supplying both forms, or only half of the scoped form, returns `400`.
+- Tokens are 1–256 visible ASCII characters with no spaces.
+- Namespace and principal are 1–128 characters from `[A-Za-z0-9._-]`.
+- Both forms normalize to one canonical SHA-256 key; storage paths use that key.
+- Raw tokens are never written to disk. Scoped namespace/principal are stored as identity metadata in `state/identities/<key>.json`.
+- File IDs are bound to an identity. Accessing another identity's file ID returns `403`.
+
+Authentication is `Authorization: Bearer <RUNBOX_API_KEY>`. `/health` and `/ready` are unauthenticated; everything else requires the bearer token.
+
+## API at a glance
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -87,64 +233,63 @@ RUNBOX_ALLOW_ANONYMOUS=1 RUNBOX_ROOT=./.runbox go run ./cmd/runboxd
 | GET | `/v1/list?path=out` | List a workspace directory |
 | DELETE | `/v1/workspace[?purge=true]` | Remove the workspace (and optionally the archive) |
 
-Identity (one of):
+Full request and response reference: [docs/api.md](docs/api.md).
 
-```http
-X-Runbox-Identity: 01J...
+## How it works
+
+```mermaid
+flowchart LR
+    A["Agent or application"] -->|"HTTP · Bearer · X-Runbox-*"| B["runboxd"]
+    B -->|"fork/exec"| C["/bin/sh -c command · UID 20000+n"]
+    B --> D[("workspaces/identity-key · mutable")]
+    B --> E[("keep/identity-key · immutable")]
 ```
 
-or:
-
-```http
-X-Runbox-Namespace: tenant-a
-X-Runbox-Principal: user-42
+```text
+RUNBOX_ROOT/
+├── workspaces/<identity-key>/       0750, owned by the identity's UID
+│   ├── files/                       uploaded inputs
+│   ├── out/                         files returned from the last command
+│   ├── .local/  .npm-global/        persistent pip / npm installs
+│   ├── .cache/  .config/  .tmp/     persistent XDG state and temp files
+│   └── ...
+├── keep/<identity-key>/             immutable deliverables, runner-owned
+└── state/
+    ├── uids/<identity-key>          stable UID assignment
+    └── identities/<key>.json        identity metadata (never the token)
 ```
 
-Supplying both forms is rejected. Authentication: `Authorization: Bearer <key>`.
+- The command runs in its own process group as the identity's UID. A timeout kills the group, not the container.
+- Output is captured with a bounded head + tail buffer, so a command printing gigabytes cannot exhaust RAM.
+- Files created under `out/` during the call are returned as file IDs. Delivered files are copied into `keep/`, outside the writable workspace. `?purge=true` removes the archive with the workspace.
+- A janitor removes workspaces idle longer than the retention window; `keep/` is untouched.
+- The API key is compared in constant time; identity values are validated, not sanitized — sanitizing would merge distinct identities onto one workspace.
 
-Full request/response reference: [docs/api.md](docs/api.md).
+More detail: [docs/architecture.md](docs/architecture.md).
 
-## Go SDK
+## Security
 
-```go
-client, _ := sandbox.NewClient(sandbox.ClientOptions{
-    BaseURL:   "http://localhost:8099",
-    APIKey:    os.Getenv("RUNBOX_API_KEY"),
-    Identity: sandbox.ScopedIdentity("team-a", "user-42"),
-})
-result, err := client.Run(ctx, sandbox.ExecRequest{
-    Command: `python3 -c "open('out/report.csv','w').write('a,b\n1,2\n')"`,
-    Timeout: 30 * time.Second,
-})
-for _, file := range result.Files {
-    out, _ := os.Create(filepath.Base(file.Name))
-    client.DownloadTo(ctx, file.FileID, out)
-    out.Close()
-}
-```
+- Path resolution rejects `..`, absolute paths, Windows drive letters and symlink escapes. Serving a symlink planted in the workspace would otherwise read files as root.
+- Commands never inherit the runner's environment, including the API key.
+- The compose file runs read-only with `cap_drop: ALL`, adds only `CHOWN`, `FOWNER`, `SETUID`, `SETGID`, `DAC_OVERRIDE` and `KILL`, sets `no-new-privileges`, and caps memory, CPU and pids.
+- Images run tini as PID 1 so killed command trees are reaped.
+- Startup fails closed when running as root without the required capabilities. `RUNBOX_ALLOW_MISSING_CAPS=1` is a development-only override.
 
-Attachments stream straight from an `io.Reader`:
+> Runbox is not a strong multi-tenant boundary on its own. It relies on the container's namespaces/cgroups plus per-UID file permissions. For hostile tenants, run it under gVisor or a microVM. See [docs/security.md](docs/security.md).
 
-```go
-result, err := client.Run(ctx, sandbox.ExecRequest{
-    Command: "python3 analyze.py files/input.csv",
-    Files:   []sandbox.FileUpload{{Name: "input.csv", Reader: file}},
-})
-```
+## Operations
 
-`Identity` supports either a single token (`sandbox.TokenIdentity`) or a
-namespace + principal (`sandbox.ScopedIdentity`). Both normalize to one
-canonical storage key; namespace/principal are kept as metadata for tenant-level
-operations.
+- `/ready` verifies that the data directories exist and the state directory is writable.
+- `/metrics` exposes bounded Prometheus counters: requests, execs, timeouts, busy, upload/download bytes, archives, workspace deletes, active commands and uptime.
+- Graceful shutdown cancels in-flight commands after the configured budget and kills their process groups.
+- Logs are structured text or JSON (`RUNBOX_LOG_FORMAT`).
 
-`Client` also implements `sandbox.Backend`: use `Exec(ctx, identity, …)` when
-the identity is passed per call, or `Run` with a client bound to one identity.
+See [docs/production.md](docs/production.md) for the production checklist: SLOs, capacity, quotas, key handling, gVisor, multi-replica and runbooks.
 
-Full example: [examples/go](examples/go). Stdlib-only Python client: [examples/python](examples/python). curl walkthrough: [examples/curl.sh](examples/curl.sh).
+<details>
+<summary><strong>All configuration</strong></summary>
 
-## Configuration
-
-Every setting is an environment variable. Durations accept `30s`, `15m`, `7d` or bare seconds; sizes accept `20MiB`, `20MB`, `1GiB` or bytes.
+Durations accept `30s`, `15m`, `7d` or bare seconds; sizes accept `20MiB`, `20MB`, `1GiB` or bytes.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -172,45 +317,7 @@ Every setting is an environment variable. Durations accept `30s`, `15m`, `7d` or
 | `RUNBOX_TLS_CERT` / `RUNBOX_TLS_KEY` | — | Terminate TLS in-process. A reverse proxy is usually better. |
 | `RUNBOX_LOG_FORMAT` | `text` | `text` or `json`. |
 
-## How it works
-
-```
-client ──HTTP──► runboxd ──fork/exec──► /bin/sh -c "…"  (UID 20000+n)
-                    │                        │
-                    ├─ /workspace/workspaces/<identity-key>/  mutable, user-owned
-                    └─ /workspace/keep/<identity-key>/        immutable, runner-owned
-```
-
-- One workspace per identity, persisted across calls, so installed packages and intermediate files survive.
-- Identity is either a token or namespace+principal; both normalize to one canonical key. Scoped namespace/principal is kept as metadata for tenant-level operations; tokens are never persisted.
-- `HOME`, `XDG_*`, pip and npm prefixes point inside the workspace; installs persist and count toward the quota.
-- The command runs in its own process group as the identity's UID; a timeout kills the group, not the container.
-- Output is capped with a head+tail buffer, so a command printing gigabytes cannot exhaust RAM.
-- Files created under `out/` during the call are returned as file IDs. Delivered files are copied into `keep/`, outside the writable workspace, so later commands cannot alter them.
-- A janitor removes workspaces idle longer than the retention window; `keep/` is untouched.
-
-More detail: [docs/architecture.md](docs/architecture.md).
-
-## Security
-
-- Path resolution rejects `..`, absolute paths, Windows drive letters and symlink escapes. Serving a symlink planted in the workspace would otherwise read files as root.
-- Commands never inherit the runner's environment.
-- The compose file runs read-only with `cap_drop: ALL`, adds only `CHOWN`, `FOWNER`, `SETUID`, `SETGID`, `DAC_OVERRIDE` and `KILL`, sets `no-new-privileges`, and caps memory, CPU and pids. Images run tini as PID 1 to reap killed command trees.
-- The API key is compared in constant time; identity values are validated, not sanitized (sanitizing would merge distinct identities onto one workspace).
-- Archived files are runner-owned and live outside the workspace; the sandbox identity cannot rewrite a delivered file.
-
-Known limits and the isolation upgrade path (gVisor, microVM, network policy): [docs/security.md](docs/security.md).
-
-## Production
-
-`/ready` verifies that the data directories exist and the state directory is
-writable. `/metrics` exposes bounded Prometheus counters (requests, execs,
-timeouts, busy, bytes, archives, active commands). Startup fails closed when the
-process is root and `CHOWN`, `FOWNER`, `SETUID`, `SETGID`, `DAC_OVERRIDE` or
-`KILL` is missing.
-
-See [docs/production.md](docs/production.md) for the commercial checklist:
-SLOs, capacity, quotas, key handling, gVisor, multi-replica and runbooks.
+</details>
 
 ## Image contents
 
@@ -223,7 +330,7 @@ SLOs, capacity, quotas, key handling, gVisor, multi-replica and runbooks.
 | Python document/data libraries | yes | no |
 | Node `xlsx`, `csv-parse`, `dayjs` | yes | no |
 
-Build arguments for restricted networks: `GOPROXY`, `APT_MIRROR`, `PIP_INDEX`, `NPM_REGISTRY` (see [docs/deployment.md](docs/deployment.md)).
+Build arguments for restricted networks: `GOPROXY`, `APT_MIRROR`, `PIP_INDEX`, `NPM_REGISTRY`. See [docs/deployment.md](docs/deployment.md).
 
 ## Comparison
 
@@ -236,23 +343,71 @@ Build arguments for restricted networks: `GOPROXY`, `APT_MIRROR`, `PIP_INDEX`, `
 | File isolation | built-in: workspace, quota, immutable archive, symlink-safe | volume or API per sandbox | strong |
 | Best fit | internal/semi-trusted, single machine | multi-node, stronger per-sandbox isolation | hostile tenants |
 
-OpenSandbox and CubeSandbox are control-plane projects and support different
-deployment modes; the column describes the common container-per-sandbox model,
-not a claim about every mode. See [docs/comparison.md](docs/comparison.md) for
-gVisor, Dify and the full trade-off list.
+OpenSandbox and CubeSandbox are control-plane projects and support different deployment modes; the column describes the common container-per-sandbox model, not a claim about every mode. See [docs/comparison.md](docs/comparison.md) for gVisor, Dify and the full trade-off list.
 
-The closest prior art is **dify-sandbox**: one container with a per-task UID.
-Runbox keeps that shape and adds the per-identity file isolation described
-above.
+The closest prior art is **dify-sandbox**: one container with a per-task UID. Runbox keeps that shape and adds the per-identity file isolation described above.
 
-## Limitations / roadmap
+## FAQ
 
-- No built-in egress control; use a network policy or firewall if commands must not reach the internet.
-- No HTTP range requests; large downloads stream from the start.
-- Workspaces are local to one runner. Multiple replicas need sticky routing per identity or shared storage.
-- No custom seccomp profile beyond Docker's defaults; gVisor is the recommended next step.
-- `keep/` is quota-limited per identity but does not expire automatically.
+<details>
+<summary><strong>Is Runbox an agent runtime?</strong></summary>
+
+No. Runbox does not host agents, call models or run a workflow loop. It executes commands and moves files. Your agent framework decides what to run and when.
+
+</details>
+
+<details>
+<summary><strong>Does every user get a container?</strong></summary>
+
+No. Every identity shares one long-lived container and gets a UID plus a private workspace inside it. That is what makes single-machine deployment practical.
+
+</details>
+
+<details>
+<summary><strong>Can I run untrusted code?</strong></summary>
+
+Not as a hard multi-tenant boundary. Runbox uses the container's namespaces and cgroups plus per-UID file permissions, so the kernel is shared. For hostile tenants, run it under gVisor or a microVM.
+
+</details>
+
+<details>
+<summary><strong>How is it different from Dify's sandbox?</strong></summary>
+
+Dify's sandbox is part of the Dify stack and scopes files per task. Runbox is standalone, exposes a stable HTTP contract, and adds per-identity workspaces, quotas, an immutable archive and symlink-safe paths.
+
+</details>
+
+<details>
+<summary><strong>Does it work on Windows or macOS?</strong></summary>
+
+For development, yes. Production isolation is Linux-only, because per-identity UID isolation depends on Linux credentials and file ownership.
+
+</details>
+
+## Roadmap
+
+- [ ] Egress policy hooks for commands that must not reach the internet
+- [ ] HTTP range requests for large downloads
+- [ ] Shared storage or per-identity routing for multi-replica deployments
+- [ ] Optional hard disk quotas per identity
+- [ ] A maintained seccomp profile and a gVisor deployment recipe
+- [ ] Tenant admin API: namespace-level usage, quota and purge
+- [ ] Published container images and tagged Go module releases
+
+## Contributing
+
+Issues and pull requests are welcome. Before opening a PR, run:
+
+```bash
+make check   # gofmt, go vet, go test -race
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and [SECURITY.md](SECURITY.md) for reporting security issues.
 
 ## License
 
-MIT.
+MIT. See [LICENSE](LICENSE).
+
+<p align="center">
+  <sub><strong>Run in a box.</strong> If Runbox is useful to you, a star helps others find it.</sub>
+</p>
