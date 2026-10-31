@@ -6,6 +6,11 @@ Initial extraction from the property-management platform's sandbox module.
 
 - HTTP runner (`runboxd`) with `/v1/exec`, `/v1/files`, `/v1/files/{id}/keep`,
   `/v1/path`, `/v1/list`, `/v1/workspace`, `/v1/capabilities` and `/health`.
+- Gin-based HTTP layer with streaming multipart uploads, Range and HEAD
+  downloads, and JSON errors for unknown routes and methods.
+- SQLite state store (GORM, pure-Go driver) for identities and UID assignments.
+- Batch file upload (`POST /v1/files/batch`) and tar archive downloads
+  (`GET /v1/archive`) for intermediate files and directories.
 - Per-identity workspace, persisted UID assignment and per-identity
   serialization.
 - Upload, download, path download, directory listing, immutable archive and

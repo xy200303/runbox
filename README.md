@@ -25,7 +25,7 @@
 </p>
 
 <p align="center">
-  <sub><strong>3.8k</strong> lines of Go · <strong>0</strong> Go dependencies · <strong>1</strong> binary · <strong>1</strong> container · <strong>1</strong> volume</sub>
+  <sub><strong>3.8k</strong> lines of Go · <strong>1</strong> binary · <strong>1</strong> container · <strong>1</strong> volume</sub>
 </p>
 
 ---
@@ -61,9 +61,10 @@ Choose Runbox when you want one container next to your application, semi-trusted
 | **Immutable deliverables** | Files produced under `out/` are returned as opaque file IDs. Archiving copies them into `keep/`, outside the writable tree, so later commands cannot alter a delivered file. |
 | **Bounded everything** | Upload size, command length, input count, captured stdout (head + tail), output count and size, workspace quota, archive quota, timeout, concurrency and retention. |
 | **Files are first-class** | Upload, execute with inputs, list, download by opaque ID or workspace path, archive, delete. Attachments stream as multipart; plain calls use JSON. |
+| **Large files** | Uploads stream to disk without buffering the whole body in memory; downloads support `Range` and `HEAD`. |
 | **Fail-closed hardening** | Read-only root filesystem, dropped capabilities, `no-new-privileges`, tini as PID 1. Startup refuses to run as root without the capabilities it needs. |
 | **Observable by default** | `/ready` readiness, Prometheus metrics at `/metrics`, structured text or JSON request logs. |
-| **Small enough to audit** | Stdlib-only Go implementation with a small operational footprint. |
+| **Small enough to audit** | Gin on the HTTP edge, a stdlib-only SDK, and a small operational footprint. |
 
 ## Quick start
 
@@ -210,7 +211,7 @@ Rules:
 - Tokens are 1–256 visible ASCII characters with no spaces.
 - Namespace and principal are 1–128 characters from `[A-Za-z0-9._-]`.
 - Both forms normalize to one canonical SHA-256 key; storage paths use that key.
-- Raw tokens are never written to disk. Scoped namespace/principal are stored as identity metadata in `state/identities/<key>.json`.
+- Raw tokens are never written to disk. Scoped namespace/principal and the UID assignment are stored in the `identities` table of `state/runbox.db`.
 - File IDs are bound to an identity. Accessing another identity's file ID returns `403`.
 
 Authentication is `Authorization: Bearer <RUNBOX_API_KEY>`. `/health` and `/ready` are unauthenticated; everything else requires the bearer token.
@@ -225,10 +226,12 @@ Authentication is `Authorization: Bearer <RUNBOX_API_KEY>`. `/health` and `/read
 | GET | `/v1/capabilities` | Limits and detected tooling |
 | POST | `/v1/exec` | Run a command (JSON or multipart) |
 | POST | `/v1/files` | Upload one file |
+| POST | `/v1/files/batch` | Upload several files in one request |
 | GET | `/v1/files/{id}` | Download a file by ID |
 | POST | `/v1/files/{id}/keep` | Archive a file immutably |
 | GET | `/v1/path?path=out/x` | Download by workspace path |
 | GET | `/v1/list?path=out` | List a workspace directory |
+| GET | `/v1/archive?path=out&path=tmp` | Download files or directories as a tar archive |
 | DELETE | `/v1/workspace[?purge=true]` | Remove the workspace (and optionally the archive) |
 
 Full request and response reference: [docs/api.md](docs/api.md).
@@ -253,8 +256,9 @@ RUNBOX_ROOT/
 │   └── ...
 ├── keep/<identity-key>/             immutable deliverables, runner-owned
 └── state/
-    ├── uids/<identity-key>          stable UID assignment
-    └── identities/<key>.json        identity metadata (never the token)
+    ├── runbox.db                    identities, UIDs and metadata (SQLite)
+    ├── runbox.db-wal                WAL journal while the runner is active
+    └── runbox.db-shm                shared-memory index while the runner is active
 ```
 
 - The command runs in its own process group as the identity's UID. A timeout kills the group, not the container.
@@ -304,6 +308,8 @@ Durations accept `30s`, `15m`, `7d` or bare seconds; sizes accept `20MiB`, `20MB
 | `RUNBOX_MAX_STDOUT_BYTES` | `200KiB` | Captured stdout+stderr limit; keeps the head and the tail. |
 | `RUNBOX_MAX_OUTPUT_FILES` | `20` | Files returned from one execution. |
 | `RUNBOX_MAX_OUTPUT_BYTES` | `200MiB` | Total output size returned from one execution. |
+| `RUNBOX_MAX_BATCH_FILES` | `1000` | Files per batch upload or tar archive. |
+| `RUNBOX_MAX_BATCH_BYTES` | `1GiB` | Total size of one tar archive download. |
 | `RUNBOX_QUOTA_BYTES` | `1GiB` | Per-workspace quota; execution is refused above it. `0` = unlimited. |
 | `RUNBOX_KEEP_BYTES` | `1GiB` | Per-identity archive quota. `0` = unlimited. |
 | `RUNBOX_RETENTION` | `7d` | Idle workspace retention. |
@@ -378,7 +384,6 @@ For development, yes. Production isolation is Linux-only, because per-identity U
 ## Roadmap
 
 - [ ] Egress policy hooks for commands that must not reach the internet
-- [ ] HTTP range requests for large downloads
 - [ ] Shared storage or per-identity routing for multi-replica deployments
 - [ ] Optional hard disk quotas per identity
 - [ ] A maintained seccomp profile and a gVisor deployment recipe

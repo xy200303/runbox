@@ -7,20 +7,21 @@ package runner
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/xy200303/runbox/internal/store"
 	"github.com/xy200303/runbox/sandbox"
 )
 
@@ -37,6 +38,8 @@ type Options struct {
 	MaxStdoutBytes  int
 	MaxOutputFiles  int
 	MaxOutputBytes  int64
+	MaxBatchFiles   int
+	MaxBatchBytes   int64
 	QuotaBytes      int64
 	KeepBytes       int64
 	Retention       time.Duration
@@ -58,6 +61,7 @@ type Runner struct {
 	keepRoot       string
 	stateRoot      string
 	sem            chan struct{}
+	store          *store.Store
 
 	mu      sync.Mutex
 	uidPool chan int
@@ -94,6 +98,12 @@ func New(opts Options) (*Runner, error) {
 	}
 	if opts.MaxStdoutBytes < 1024 {
 		opts.MaxStdoutBytes = sandbox.DefaultMaxStdoutBytes
+	}
+	if opts.MaxBatchFiles <= 0 {
+		opts.MaxBatchFiles = 1000
+	}
+	if opts.MaxBatchBytes <= 0 {
+		opts.MaxBatchBytes = 1 << 30
 	}
 	if opts.DefaultTimeout <= 0 {
 		opts.DefaultTimeout = sandbox.DefaultTimeout
@@ -141,55 +151,57 @@ func New(opts Options) (*Runner, error) {
 		userUID:        map[string]int{},
 		locks:          map[string]*sync.Mutex{},
 	}
-	for _, dir := range []string{root, runner.workspacesRoot, runner.keepRoot, runner.stateRoot, filepath.Join(runner.stateRoot, "identities")} {
+	for _, dir := range []string{root, runner.workspacesRoot, runner.keepRoot, runner.stateRoot} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, fmt.Errorf("create %s: %w", dir, err)
 		}
 	}
-	runner.loadUIDMappings()
+	st, err := store.Open(filepath.Join(runner.stateRoot, "runbox.db"))
+	if err != nil {
+		return nil, fmt.Errorf("open state store: %w", err)
+	}
+	runner.store = st
+	if err := runner.loadUIDMappings(); err != nil {
+		_ = st.Close()
+		return nil, err
+	}
 	return runner, nil
 }
 
 // loadUIDMappings restores persisted identity -> UID assignments and fills
 // the free pool. Without this, a restart could hand the same identity a
 // different UID while its files still belong to the old one.
-func (r *Runner) loadUIDMappings() {
+func (r *Runner) loadUIDMappings() error {
+	identities, err := r.store.All()
+	if err != nil {
+		return fmt.Errorf("load identities: %w", err)
+	}
 	used := make(map[int]bool, r.opts.UIDMax-r.opts.UIDMin)
-	uidsRoot := filepath.Join(r.stateRoot, "uids")
-	entries, err := os.ReadDir(uidsRoot)
-	if err == nil {
-		for _, entry := range entries {
-			if entry.IsDir() || !sandbox.ValidKey(entry.Name()) {
-				continue
-			}
-			data, err := os.ReadFile(filepath.Join(uidsRoot, entry.Name()))
-			if err != nil {
-				continue
-			}
-			uid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-			if err != nil || uid < r.opts.UIDMin || uid >= r.opts.UIDMax || used[uid] {
-				continue
-			}
-			used[uid] = true
-			r.userUID[entry.Name()] = uid
+	for _, identity := range identities {
+		uid := int(identity.UID)
+		if uid < r.opts.UIDMin || uid >= r.opts.UIDMax {
+			return fmt.Errorf("identity %s has UID %d outside the configured range %d..%d; fix the state database or widen RUNBOX_UID_MIN/RUNBOX_UID_MAX", identity.Key, uid, r.opts.UIDMin, r.opts.UIDMax)
 		}
+		if used[uid] {
+			return fmt.Errorf("duplicate UID %d in state database", uid)
+		}
+		used[uid] = true
+		r.userUID[identity.Key] = uid
 	}
 	for uid := r.opts.UIDMin; uid < r.opts.UIDMax; uid++ {
 		if !used[uid] {
 			r.uidPool <- uid
 		}
 	}
+	return nil
 }
 
-func (r *Runner) persistUID(identity string, uid int) {
-	directory := filepath.Join(r.stateRoot, "uids")
-	if err := os.MkdirAll(directory, 0o755); err != nil {
-		r.log.Warn("cannot persist uid mapping", "identity", identity, "error", err)
-		return
+// Close releases the state database.
+func (r *Runner) Close() error {
+	if r == nil || r.store == nil {
+		return nil
 	}
-	if err := os.WriteFile(filepath.Join(directory, identity), []byte(strconv.Itoa(uid)+"\n"), 0o600); err != nil {
-		r.log.Warn("cannot persist uid mapping", "identity", identity, "error", err)
-	}
+	return r.store.Close()
 }
 
 // Enabled satisfies sandbox.Backend.
@@ -201,7 +213,7 @@ func (r *Runner) Ready(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	for _, dir := range []string{r.root, r.workspacesRoot, r.keepRoot, r.stateRoot, filepath.Join(r.stateRoot, "identities")} {
+	for _, dir := range []string{r.root, r.workspacesRoot, r.keepRoot, r.stateRoot} {
 		info, err := os.Stat(dir)
 		if err != nil {
 			return err
@@ -313,101 +325,46 @@ func (r *Runner) ensureWorkspace(identity sandbox.Identity, uid int, drop bool) 
 			}
 		}
 	}
-	r.writeIdentityRecord(key, identity)
+	if err := r.store.Touch(key); err != nil {
+		r.log.Warn("cannot update identity metadata", "key", key, "error", err)
+	}
 	return workspace, nil
 }
 
 // uidFor assigns a stable UID per identity. A stable UID keeps file ownership
 // — and therefore pip/npm state — valid across calls.
-type identityRecord struct {
-	Version   int    `json:"version"`
-	Mode      string `json:"mode"`
-	Namespace string `json:"namespace,omitempty"`
-	Principal string `json:"principal,omitempty"`
-	CreatedAt string `json:"created_at"`
-}
-
-func (r *Runner) writeIdentityRecord(key string, identity sandbox.Identity) {
-	directory := filepath.Join(r.stateRoot, "identities")
-	if err := os.MkdirAll(directory, 0o755); err != nil {
-		r.log.Warn("cannot create identity metadata directory", "error", err)
-		return
-	}
-	path := filepath.Join(directory, key+".json")
-	if _, err := os.Stat(path); err == nil {
-		return
-	} else if !os.IsNotExist(err) {
-		r.log.Warn("cannot inspect identity metadata", "key", key, "error", err)
-		return
-	}
-	record := identityRecord{
-		Version:   1,
-		Mode:      identity.Mode(),
-		Namespace: identity.Namespace,
-		Principal: identity.Principal,
-		CreatedAt: time.Now().UTC().Format(time.RFC3339),
-	}
-	data, err := json.Marshal(record)
+func (r *Runner) uidFor(identity sandbox.Identity) (int, error) {
+	key, err := identity.CanonicalKey()
 	if err != nil {
-		r.log.Warn("cannot encode identity metadata", "key", key, "error", err)
-		return
+		return 0, err
 	}
-	temp, err := os.CreateTemp(directory, ".identity-*")
-	if err != nil {
-		r.log.Warn("cannot create identity metadata", "key", key, "error", err)
-		return
-	}
-	tempName := temp.Name()
-	if _, err := temp.Write(data); err != nil {
-		temp.Close()
-		os.Remove(tempName)
-		r.log.Warn("cannot write identity metadata", "key", key, "error", err)
-		return
-	}
-	if err := temp.Close(); err != nil {
-		os.Remove(tempName)
-		r.log.Warn("cannot close identity metadata", "key", key, "error", err)
-		return
-	}
-	if err := os.Chmod(tempName, 0o640); err != nil {
-		os.Remove(tempName)
-		r.log.Warn("cannot chmod identity metadata", "key", key, "error", err)
-		return
-	}
-	if err := os.Rename(tempName, path); err != nil {
-		os.Remove(tempName)
-		r.log.Warn("cannot store identity metadata", "key", key, "error", err)
-	}
-}
-
-func (r *Runner) uidFor(key string) int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if uid, ok := r.userUID[key]; ok {
-		return uid
+		return uid, nil
 	}
 	select {
 	case uid := <-r.uidPool:
-		r.userUID[key] = uid
-		r.persistUID(key, uid)
-		return uid
-	default:
-		// The pool is exhausted: derive a stable UID from the key. The
-		// per-identity lock still serialises calls, and directories are 0750.
-		var sum uint32
-		for _, char := range key {
-			sum = sum*31 + uint32(char)
+		if err := r.store.Create(store.FromSandbox(identity, uid, key)); err != nil {
+			r.uidPool <- uid
+			return 0, sandbox.Internal("persist identity: " + err.Error())
 		}
-		span := uint32(r.opts.UIDMax - r.opts.UIDMin)
-		return r.opts.UIDMin + int(sum%span)
+		r.userUID[key] = uid
+		return uid, nil
+	default:
+		return 0, sandbox.Conflict("uid_exhausted", fmt.Sprintf("no free UID in %d..%d", r.opts.UIDMin, r.opts.UIDMax))
 	}
 }
 
-func (r *Runner) execUID(key string) (int, bool) {
-	if !canDropPrivileges() {
-		return currentUID(), false
+func (r *Runner) execUID(identity sandbox.Identity) (int, bool, error) {
+	uid, err := r.uidFor(identity)
+	if err != nil {
+		return 0, false, err
 	}
-	return r.uidFor(key), true
+	if !canDropPrivileges() {
+		return currentUID(), false, nil
+	}
+	return uid, true, nil
 }
 
 func (r *Runner) lockFor(key string) *sync.Mutex {
@@ -439,7 +396,10 @@ func (r *Runner) SaveFile(ctx context.Context, identity sandbox.Identity, name s
 	lock.Lock()
 	defer lock.Unlock()
 
-	uid, drop := r.execUID(key)
+	uid, drop, uidErr := r.execUID(identity)
+	if uidErr != nil {
+		return "", uidErr
+	}
 	workspace, err := r.ensureWorkspace(identity, uid, drop)
 	if err != nil {
 		return "", sandbox.Internal("create workspace: " + err.Error())
@@ -457,6 +417,10 @@ func (r *Runner) SaveFile(ctx context.Context, identity sandbox.Identity, name s
 	written, err := io.Copy(temp, io.LimitReader(reader, r.opts.MaxUploadBytes+1))
 	if err != nil {
 		cleanup()
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			return "", sandbox.TooLarge("request body is too large")
+		}
 		return "", sandbox.Internal("write upload: " + err.Error())
 	}
 	if written > r.opts.MaxUploadBytes {
@@ -613,7 +577,10 @@ func (r *Runner) Archive(ctx context.Context, identity sandbox.Identity, fileID 
 		return sandbox.Output{}, sandbox.BadRequest("only files/ and out/ entries can be archived")
 	}
 
-	uid, drop := r.execUID(key)
+	uid, drop, uidErr := r.execUID(identity)
+	if uidErr != nil {
+		return sandbox.Output{}, uidErr
+	}
 	workspace, err := r.ensureWorkspace(identity, uid, drop)
 	if err != nil {
 		return sandbox.Output{}, sandbox.Internal("create workspace: " + err.Error())
@@ -709,6 +676,109 @@ func (r *Runner) List(ctx context.Context, identity sandbox.Identity, relPath st
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
 	return result, nil
+}
+
+// BatchFile is one regular file selected for a batch download.
+type BatchFile struct {
+	Path    string
+	Full    string
+	Size    int64
+	ModTime time.Time
+}
+
+// BatchFiles resolves relative paths inside the identity workspace and returns
+// the regular files they contain. Directories are walked without following
+// symlinks.
+func (r *Runner) BatchFiles(ctx context.Context, identity sandbox.Identity, paths []string) ([]BatchFile, error) {
+	if apiErr := contextErr(ctx); apiErr != nil {
+		return nil, apiErr
+	}
+	if _, apiErr := r.key(identity); apiErr != nil {
+		return nil, apiErr
+	}
+	if len(paths) == 0 {
+		return nil, sandbox.BadRequest("at least one path is required")
+	}
+	workspace := r.workspace(identity)
+	seen := make(map[string]bool)
+	files := make([]BatchFile, 0)
+	var total int64
+	add := func(full string, info fs.FileInfo) error {
+		relative, err := filepath.Rel(workspace, full)
+		if err != nil {
+			return sandbox.BadRequest("invalid batch path")
+		}
+		relative = filepath.ToSlash(relative)
+		if seen[relative] {
+			return nil
+		}
+		if len(files) >= r.opts.MaxBatchFiles {
+			return sandbox.BadRequest(fmt.Sprintf("batch exceeds %d files", r.opts.MaxBatchFiles))
+		}
+		if total+info.Size() > r.opts.MaxBatchBytes {
+			return sandbox.BadRequest(fmt.Sprintf("batch exceeds %d bytes", r.opts.MaxBatchBytes))
+		}
+		seen[relative] = true
+		total += info.Size()
+		files = append(files, BatchFile{
+			Path:    relative,
+			Full:    full,
+			Size:    info.Size(),
+			ModTime: info.ModTime(),
+		})
+		return nil
+	}
+
+	for _, raw := range paths {
+		relative, err := sandbox.NormalizeRel(raw)
+		if err != nil {
+			return nil, err
+		}
+		full, err := secureJoin(workspace, relative)
+		if err != nil {
+			return nil, err
+		}
+		info, err := os.Lstat(full)
+		if err != nil {
+			return nil, sandbox.NotFound("path not found: " + relative)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil, sandbox.BadRequest("symlinks are not downloadable: " + relative)
+		}
+		if info.IsDir() {
+			walkErr := filepath.WalkDir(full, func(current string, entry fs.DirEntry, walkErr error) error {
+				if walkErr != nil {
+					return walkErr
+				}
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				if entry.Type()&os.ModeSymlink != 0 {
+					return nil
+				}
+				if entry.IsDir() {
+					return nil
+				}
+				entryInfo, err := entry.Info()
+				if err != nil || !entryInfo.Mode().IsRegular() {
+					return nil
+				}
+				return add(current, entryInfo)
+			})
+			if walkErr != nil {
+				return nil, walkErr
+			}
+			continue
+		}
+		if !info.Mode().IsRegular() {
+			return nil, sandbox.BadRequest("not a regular file or directory: " + relative)
+		}
+		if err := add(full, info); err != nil {
+			return nil, err
+		}
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+	return files, nil
 }
 
 // DeleteWorkspace removes the mutable workspace. purge=true also drops the

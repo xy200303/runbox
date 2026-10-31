@@ -33,7 +33,7 @@ Runbox has exactly one API:
 |---|---|
 | Identity | `X-Runbox-Identity` or `X-Runbox-Namespace` + `X-Runbox-Principal` |
 | Authentication | `Authorization: Bearer` |
-| Identity metadata | `state/identities/<key>.json` |
+| Identity metadata | `state/runbox.db` (`identities`) |
 | Configuration | `RUNBOX_*` environment variables only |
 | File IDs | `rbx_` prefix, versioned four fields (version, key, kind, path) |
 | Workspace | `<root>/workspaces/<key>` |

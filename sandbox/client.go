@@ -257,6 +257,80 @@ func (c *Client) Upload(ctx context.Context, name string, reader io.Reader, size
 	return &uploaded, nil
 }
 
+// UploadBatch uploads several files in one multipart request. Files are
+// stored under the client's bound identity.
+func (c *Client) UploadBatch(ctx context.Context, files []FileUpload) ([]UploadedFile, error) {
+	if err := c.requireIdentity(); err != nil {
+		return nil, err
+	}
+	if len(files) == 0 {
+		return nil, BadRequest("at least one file is required")
+	}
+	pr, pw := io.Pipe()
+	writer := multipart.NewWriter(pw)
+	go func() {
+		defer pw.Close()
+		for _, file := range files {
+			part, err := writer.CreateFormFile("files", file.Name)
+			if err != nil {
+				pw.CloseWithError(err)
+				return
+			}
+			if _, err := io.Copy(part, file.Reader); err != nil {
+				pw.CloseWithError(err)
+				return
+			}
+		}
+		if err := writer.Close(); err != nil {
+			pw.CloseWithError(err)
+		}
+	}()
+	request, err := c.newRequest(ctx, http.MethodPost, "/v1/files/batch", pr, writer.FormDataContentType())
+	if err != nil {
+		pr.Close()
+		return nil, err
+	}
+	response, err := c.send(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	var payload struct {
+		Files []UploadedFile `json:"files"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 8<<20)).Decode(&payload); err != nil {
+		return nil, Internal("invalid batch upload response: " + err.Error())
+	}
+	return payload.Files, nil
+}
+
+// DownloadArchive writes a tar archive of the requested workspace paths to w.
+// Paths are relative to the caller's workspace and may name files or
+// directories.
+func (c *Client) DownloadArchive(ctx context.Context, identity Identity, paths []string, w io.Writer) (int64, error) {
+	client, err := c.scoped(identity)
+	if err != nil {
+		return 0, err
+	}
+	if len(paths) == 0 {
+		return 0, BadRequest("at least one path is required")
+	}
+	query := url.Values{}
+	for _, path := range paths {
+		query.Add("path", path)
+	}
+	request, err := client.newRequest(ctx, http.MethodGet, "/v1/archive?"+query.Encode(), nil, "")
+	if err != nil {
+		return 0, err
+	}
+	response, err := client.send(request)
+	if err != nil {
+		return 0, err
+	}
+	defer response.Body.Close()
+	return io.Copy(w, response.Body)
+}
+
 // OpenFile downloads an uploaded or produced file by id.
 func (c *Client) OpenFile(ctx context.Context, identity Identity, fileID string) (io.ReadCloser, string, error) {
 	client, err := c.scoped(identity)

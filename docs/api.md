@@ -34,8 +34,8 @@ X-Runbox-Principal: user-42
   `400 bad_request`; Runbox never merges two identity sources.
 - The server hashes the identity into a canonical storage key (SHA-256). The
   key, not the raw value, is used for workspaces, UIDs and file IDs.
-- For scoped identities, namespace/principal are written to
-  `state/identities/<key>.json` for tenant-level operations. Tokens are not
+- For scoped identities, namespace/principal are stored in the `identities`
+  table of `state/runbox.db` for tenant-level operations. Tokens are not
   persisted.
 
 Responses carry `X-Request-Id`. Include it when reporting a problem; the same ID
@@ -243,6 +243,26 @@ The field may be named `file` or `files`. An existing file with the same name
 is replaced. The upload is written through a size-limited reader, so a lying
 `Content-Length` cannot fill the disk.
 
+## POST /v1/files/batch
+
+Upload several files in one multipart request. Every file part must use the
+field name `files`:
+
+```bash
+curl -fsS -H "Authorization: Bearer $KEY" \
+  -H "X-Runbox-Identity: team-a.user-42" \
+  -F "files=@a.csv" -F "files=@b.csv" \
+  http://localhost:8099/v1/files/batch
+```
+
+```json
+{"files": [{"file_id": "rbx_...", "name": "a.csv", "size": 10},
+           {"file_id": "rbx_...", "name": "b.csv", "size": 20}]}
+```
+
+The request is bounded by `RUNBOX_MAX_BATCH_FILES` and
+`RUNBOX_MAX_REQUEST_BYTES`. Files stream to disk; none are buffered in memory.
+
 ## GET /v1/files/{id}
 
 Download an uploaded (`files/`), produced (`out/`) or archived (`keep/`) file.
@@ -253,7 +273,8 @@ Content-Disposition: attachment; filename="fallback.txt"; filename*=UTF-8''%E6%8
 ```
 
 Clients should prefer `filename*` (RFC 5987) and fall back to `filename`.
-No range requests are supported.
+Range and HEAD requests are supported. Send `Range: bytes=0-1023` to receive
+`206 Partial Content`, or use `HEAD` to fetch headers without the body.
 
 ## POST /v1/files/{id}/keep
 
@@ -302,6 +323,22 @@ workspace root.
   ]
 }
 ```
+
+## GET /v1/archive?path=out&path=tmp/step.txt
+
+Download files or directories as one tar stream, relative to the caller's
+workspace. A directory is walked recursively; symlinks are skipped. The
+archive is bounded by `RUNBOX_MAX_BATCH_FILES` and `RUNBOX_MAX_BATCH_BYTES`.
+
+```bash
+curl -fsS -H "Authorization: Bearer $KEY" \
+  -H "X-Runbox-Identity: team-a.user-42" \
+  "http://localhost:8099/v1/archive?path=out" -o artifacts.tar
+```
+
+The response is `application/x-tar` with
+`Content-Disposition: attachment; filename="runbox-files.tar"`. This is the
+batch download path for intermediate files; no file IDs are required.
 
 ## DELETE /v1/workspace[?purge=true]
 

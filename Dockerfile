@@ -15,7 +15,8 @@ ARG GOPROXY=https://proxy.golang.org,direct
 ARG VERSION=dev
 ENV GOPROXY=${GOPROXY}
 WORKDIR /src
-COPY go.mod ./
+COPY go.mod go.sum ./
+RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/runboxd ./cmd/runboxd
 

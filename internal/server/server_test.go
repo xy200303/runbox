@@ -1,6 +1,7 @@
 package server
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -14,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -36,6 +38,8 @@ func testConfig(t *testing.T) config.Config {
 		MaxStdoutBytes:  64 << 10,
 		MaxOutputFiles:  10,
 		MaxOutputBytes:  8 << 20,
+		MaxBatchFiles:   1000,
+		MaxBatchBytes:   1 << 30,
 		QuotaBytes:      0,
 		KeepBytes:       0,
 		Retention:       time.Hour,
@@ -78,6 +82,7 @@ func newTestServer(t *testing.T, mutate func(*config.Config)) (*httptest.Server,
 	if err != nil {
 		t.Fatalf("runner: %v", err)
 	}
+	t.Cleanup(func() { _ = executor.Close() })
 	app := New(cfg, executor, logger)
 	ts := httptest.NewServer(app.Handler())
 	t.Cleanup(ts.Close)
@@ -379,6 +384,59 @@ func TestUploadExecArchive(t *testing.T) {
 	}
 }
 
+func TestBatchUploadAndArchive(t *testing.T) {
+	_, client, _, _ := newTestServer(t, nil)
+	ctx := context.Background()
+
+	uploaded, err := client.UploadBatch(ctx, []sandbox.FileUpload{
+		{Name: "alpha.txt", Reader: strings.NewReader("alpha")},
+		{Name: "beta.txt", Reader: strings.NewReader("beta")},
+	})
+	if err != nil {
+		t.Fatalf("batch upload: %v", err)
+	}
+	if len(uploaded) != 2 || uploaded[0].Size != 5 || uploaded[1].Size != 4 {
+		t.Fatalf("unexpected batch upload: %+v", uploaded)
+	}
+
+	for name, content := range map[string]string{"out/a.txt": "alpha", "out/b.txt": "beta"} {
+		if _, err := client.Run(ctx, sandbox.ExecRequest{
+			Command: writeCommand(name, content),
+			Timeout: 5 * time.Second,
+		}); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+
+	var archive bytes.Buffer
+	if _, err := client.DownloadArchive(ctx, sandbox.Identity{}, []string{"out"}, &archive); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	entries := map[string]string{}
+	reader := tar.NewReader(&archive)
+	for {
+		header, err := reader.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("tar: %v", err)
+		}
+		data, _ := io.ReadAll(reader)
+		entries[header.Name] = string(data)
+	}
+	if len(entries) != 2 || strings.TrimSpace(entries["out/a.txt"]) != "alpha" || strings.TrimSpace(entries["out/b.txt"]) != "beta" {
+		t.Fatalf("unexpected archive: %+v", entries)
+	}
+
+	bob := client.WithIdentity(sandbox.TokenIdentity("bob"))
+	_, err = bob.DownloadArchive(ctx, sandbox.Identity{}, []string{"out"}, io.Discard)
+	var apiErr *sandbox.Error
+	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusNotFound {
+		t.Fatalf("cross-identity archive error: %v", err)
+	}
+}
+
 func TestCrossWorkspaceAccess(t *testing.T) {
 	_, client, _, _ := newTestServer(t, nil)
 	ctx := context.Background()
@@ -525,6 +583,71 @@ func TestReadyAndMetrics(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Fatalf("metrics missing %q in:\n%s", want, text)
 		}
+	}
+}
+
+type zeroReader struct{}
+
+func (zeroReader) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = 0
+	}
+	return len(p), nil
+}
+
+func TestLargeUploadRangeAndHead(t *testing.T) {
+	ts, client, _, _ := newTestServer(t, func(cfg *config.Config) {
+		cfg.MaxUploadBytes = 64 << 20
+		cfg.MaxRequestBytes = 80 << 20
+	})
+	const size = int64(33 << 20)
+
+	uploaded, err := client.Upload(context.Background(), "large.bin", io.LimitReader(zeroReader{}, size), size)
+	if err != nil {
+		t.Fatalf("upload: %v", err)
+	}
+	if uploaded.Size != size {
+		t.Fatalf("uploaded size %d, want %d", uploaded.Size, size)
+	}
+
+	request := func(method string, headers map[string]string) *http.Response {
+		t.Helper()
+		req, err := http.NewRequest(method, ts.URL+"/v1/files/"+uploaded.FileID, nil)
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		req.Header.Set("Authorization", "Bearer test-key")
+		req.Header.Set("X-Runbox-Identity", "alice")
+		for key, value := range headers {
+			req.Header.Set(key, value)
+		}
+		response, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("%s: %v", method, err)
+		}
+		return response
+	}
+
+	response := request(http.MethodGet, map[string]string{"Range": "bytes=0-15"})
+	body, _ := io.ReadAll(response.Body)
+	response.Body.Close()
+	if response.StatusCode != http.StatusPartialContent {
+		t.Fatalf("range status %d, want 206", response.StatusCode)
+	}
+	if len(body) != 16 {
+		t.Fatalf("range body %d bytes, want 16", len(body))
+	}
+	if got := response.Header.Get("Content-Range"); got != "bytes 0-15/"+strconv.FormatInt(size, 10) {
+		t.Fatalf("content-range %q", got)
+	}
+
+	head := request(http.MethodHead, nil)
+	head.Body.Close()
+	if head.StatusCode != http.StatusOK {
+		t.Fatalf("head status %d", head.StatusCode)
+	}
+	if got := head.Header.Get("Content-Length"); got != strconv.FormatInt(size, 10) {
+		t.Fatalf("head content-length %q, want %d", got, size)
 	}
 }
 

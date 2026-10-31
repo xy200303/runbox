@@ -225,6 +225,13 @@ files remain owned by the old UIDs and should be re-chowned or discarded.
 ## Backup
 
 The workspace is a cache. Back it up only if intermediate state matters.
+`state/runbox.db` is not a cache: it holds the identity-to-UID mapping. Back it
+up together with `keep/`, or accept that a restore will re-assign UIDs and
+re-chown workspaces.
+
+SQLite runs in WAL mode. For a consistent copy either stop the container or use
+SQLite's backup API/`VACUUM INTO`; copying `runbox.db` while WAL is active can
+miss recent commits. Do not put `state/` on NFS or SMB.
 
 `keep/` is where delivered files live. If those files are the only copy, back
 up the `keep` tree or, better, copy deliverables into object storage from the

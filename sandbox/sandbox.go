@@ -101,6 +101,8 @@ type Limits struct {
 	MaxStdoutBytes   int   `json:"max_stdout_bytes"`
 	MaxOutputFiles   int   `json:"max_output_files"`
 	MaxOutputBytes   int64 `json:"max_output_bytes"`
+	MaxBatchFiles    int   `json:"max_batch_files"`
+	MaxBatchBytes    int64 `json:"max_batch_bytes"`
 	QuotaBytes       int64 `json:"quota_bytes"`
 	KeepBytes        int64 `json:"keep_bytes"`
 	RetentionSeconds int64 `json:"retention_seconds"`

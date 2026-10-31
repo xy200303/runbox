@@ -2,7 +2,6 @@ package runner
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -49,6 +48,7 @@ func newTestRunnerAt(t *testing.T, root string, mutate func(*Options)) *Runner {
 	if err != nil {
 		t.Fatalf("new runner: %v", err)
 	}
+	t.Cleanup(func() { _ = executor.Close() })
 	return executor
 }
 
@@ -470,6 +470,9 @@ func TestReady(t *testing.T) {
 	if err := executor.Ready(context.Background()); err != nil {
 		t.Fatalf("ready: %v", err)
 	}
+	if err := executor.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
 	if err := os.RemoveAll(executor.stateRoot); err != nil {
 		t.Fatalf("remove state: %v", err)
 	}
@@ -509,21 +512,15 @@ func TestIdentityMetadata(t *testing.T) {
 	if _, err := executor.SaveFile(ctx, scoped, "meta.txt", strings.NewReader("x"), 1); err != nil {
 		t.Fatalf("save scoped: %v", err)
 	}
-	data, err := os.ReadFile(filepath.Join(executor.stateRoot, "identities", scopedKey+".json"))
+	record, err := executor.store.Get(scopedKey)
 	if err != nil {
-		t.Fatalf("read scoped metadata: %v", err)
+		t.Fatalf("get scoped metadata: %v", err)
 	}
-	var scopedRecord struct {
-		Version   int    `json:"version"`
-		Mode      string `json:"mode"`
-		Namespace string `json:"namespace"`
-		Principal string `json:"principal"`
+	if record.Mode != "scoped" || record.Namespace != "tenant-a" || record.Principal != "alice" {
+		t.Fatalf("unexpected scoped metadata: %+v", record)
 	}
-	if err := json.Unmarshal(data, &scopedRecord); err != nil {
-		t.Fatalf("decode scoped metadata: %v", err)
-	}
-	if scopedRecord.Version != 1 || scopedRecord.Mode != "scoped" || scopedRecord.Namespace != "tenant-a" || scopedRecord.Principal != "alice" {
-		t.Fatalf("unexpected scoped metadata: %+v", scopedRecord)
+	if record.UID < int64(executor.opts.UIDMin) || record.UID >= int64(executor.opts.UIDMax) {
+		t.Fatalf("uid %d outside pool", record.UID)
 	}
 
 	token := sandbox.TokenIdentity("01J-token-value")
@@ -534,15 +531,15 @@ func TestIdentityMetadata(t *testing.T) {
 	if _, err := executor.SaveFile(ctx, token, "token.txt", strings.NewReader("x"), 1); err != nil {
 		t.Fatalf("save token: %v", err)
 	}
-	tokenData, err := os.ReadFile(filepath.Join(executor.stateRoot, "identities", tokenKey+".json"))
+	tokenRecord, err := executor.store.Get(tokenKey)
 	if err != nil {
-		t.Fatalf("read token metadata: %v", err)
+		t.Fatalf("get token metadata: %v", err)
 	}
-	if strings.Contains(string(tokenData), "01J-token-value") {
+	if tokenRecord.Mode != "token" || tokenRecord.Namespace != "" || tokenRecord.Principal != "" {
+		t.Fatalf("unexpected token metadata: %+v", tokenRecord)
+	}
+	if strings.Contains(fmt.Sprint(tokenRecord), "01J-token-value") {
 		t.Fatal("token must not be persisted in metadata")
-	}
-	if !strings.Contains(string(tokenData), `"mode":"token"`) {
-		t.Fatalf("unexpected token metadata: %s", tokenData)
 	}
 }
 
@@ -550,22 +547,32 @@ func TestUIDMappingPersistsAcrossRestart(t *testing.T) {
 	root := t.TempDir()
 	first := newTestRunnerAt(t, root, nil)
 	key := testKey(t, "alice")
-	uid := first.uidFor(key)
+	uid, err := first.uidFor(testID("alice"))
+	if err != nil {
+		t.Fatalf("first uid: %v", err)
+	}
+	record, err := first.store.Get(key)
+	if err != nil || record.UID != int64(uid) {
+		t.Fatalf("persisted record: %+v, %v", record, err)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatalf("close first: %v", err)
+	}
 
 	second := newTestRunnerAt(t, root, nil)
-	if got := second.uidFor(key); got != uid {
+	got, err := second.uidFor(testID("alice"))
+	if err != nil {
+		t.Fatalf("second uid: %v", err)
+	}
+	if got != uid {
 		t.Fatalf("uid changed across restart: %d -> %d", uid, got)
 	}
-	if other := second.uidFor(testKey(t, "bob")); other == uid {
-		t.Fatalf("two identities share uid %d", uid)
-	}
-	statePath := filepath.Join(root, "state", "uids", key)
-	data, err := os.ReadFile(statePath)
+	other, err := second.uidFor(testID("bob"))
 	if err != nil {
-		t.Fatalf("read state: %v", err)
+		t.Fatalf("bob uid: %v", err)
 	}
-	if strings.TrimSpace(string(data)) != fmt.Sprintf("%d", uid) {
-		t.Fatalf("unexpected state file %q", data)
+	if other == uid {
+		t.Fatalf("two identities share uid %d", uid)
 	}
 }
 

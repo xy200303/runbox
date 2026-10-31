@@ -14,7 +14,7 @@ caller / agent platform
    Runbox container ──► /workspace volume
         │                     ├── workspaces/<key>/   mutable
         │                     ├── keep/<key>/         immutable deliveries
-        │                     └── state/uids/              UID assignments
+        │                     └── state/runbox.db           identities + UIDs
         │
         └── outbound: package mirrors only (or no egress)
 
@@ -26,9 +26,9 @@ platform file layer (object storage / upload_file)
 Runbox does not authenticate identities. The caller authorizes the request and
 passes exactly one identity form: `X-Runbox-Identity` (token), or
 `X-Runbox-Namespace` + `X-Runbox-Principal` (scoped). Both normalize to a
-canonical key; scoped namespace/principal are stored in
-`state/identities/<key>.json` for tenant-level operations, while tokens are not
-persisted. A single bearer token authorizes the whole deployment, so put the
+canonical key; scoped namespace/principal and UID assignments are stored in the
+`identities` table of `state/runbox.db` for tenant-level operations, while
+tokens are not persisted. A single bearer token authorizes the whole deployment, so put the
 service behind a gateway if callers are not all trusted.
 
 ## Hard prerequisites
@@ -94,6 +94,9 @@ Suggested initial SLOs for an internal deployment:
 
 - The workspace is a cache: inputs, installs, intermediate files, outputs.
 - `out/` is returned to the caller and copied to `keep/` on delivery.
+- `state/runbox.db` holds identities and UID assignments. Back it up with
+  SQLite tooling (or stop the runner first); keep it on local block storage, not
+  NFS/SMB.
 - `keep/` is local and immutable to the sandbox identity, but it is not a
   backup. Copy delivered artifacts into the application's file layer.
 - Deleting the volume deletes workspaces, archives and UID mappings. Runbox does

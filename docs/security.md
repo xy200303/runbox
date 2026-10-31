@@ -36,8 +36,8 @@ not replace the container runtime.
 |---|---|---|
 | Per-identity workspace | `<root>/workspaces/<key>` | Prevents one caller from listing another's files by default. |
 | Per-identity UID | Stable UID from `[UID_MIN, UID_MAX)`, `syscall.Credential` | A command cannot `chmod` or overwrite another identity's files even if it guesses paths. Supplementary groups are cleared. |
-| Persistent UID mapping | `state/uids/<key>` | A restart must not hand an identity a new UID while its files keep the old owner. |
-| Identity metadata | `state/identities/<key>.json` | Stores mode and scoped namespace/principal for tenant operations; never stores tokens. |
+| Persistent UID mapping | `state/runbox.db` (`identities.uid`) | A restart must not hand an identity a new UID while its files keep the old owner. |
+| Identity metadata | `state/runbox.db` (`identities`) | Stores mode and scoped namespace/principal for tenant operations; never stores tokens. |
 | Symlink-safe workspace dirs | `ensureSubdir` removes and recreates links or non-directories | The workspace is writable by its identity; `mkdir`/`chmod` as root would otherwise follow a planted `files/` link. |
 | Directory modes | workspace `0750`, home dirs `0700`, files `0640` | Other UIDs in the container cannot traverse. |
 | Minimal environment | `baseEnv` allowlist + explicit overrides | The runner's environment contains `RUNBOX_API_KEY`; commands must not inherit it. |

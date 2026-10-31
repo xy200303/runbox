@@ -73,6 +73,7 @@ func main() {
 		logger.Error("runner initialization failed", "error", err)
 		os.Exit(1)
 	}
+	defer func() { _ = executor.Close() }()
 
 	app := server.New(cfg, executor, logger)
 	baseCtx, cancelBase := context.WithCancel(context.Background())
@@ -82,10 +83,13 @@ func main() {
 		Handler:           app.Handler(),
 		BaseContext:       func(net.Listener) context.Context { return baseCtx },
 		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       5 * time.Minute,
-		WriteTimeout:      cfg.MaxTimeout + 90*time.Second,
-		IdleTimeout:       2 * time.Minute,
-		MaxHeaderBytes:    1 << 20,
+		// Large uploads and downloads can legitimately run longer than a
+		// command. Put slow-client protection in the reverse proxy instead of
+		// imposing a fixed body timeout here.
+		ReadTimeout:    0,
+		WriteTimeout:   0,
+		IdleTimeout:    2 * time.Minute,
+		MaxHeaderBytes: 1 << 20,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

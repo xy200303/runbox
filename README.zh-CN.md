@@ -25,7 +25,7 @@
 </p>
 
 <p align="center">
-  <sub><strong>3.8k</strong> 行 Go · <strong>0</strong> 个 Go 依赖 · <strong>1</strong> 个二进制 · <strong>1</strong> 个容器 · <strong>1</strong> 个卷</sub>
+  <sub><strong>3.8k</strong> 行 Go · <strong>1</strong> 个二进制 · <strong>1</strong> 个容器 · <strong>1</strong> 个卷</sub>
 </p>
 
 ---
@@ -61,9 +61,10 @@ Runbox 采用 **dify-sandbox 的形态**：一个长期运行的容器，承载�
 | **交付文件不可篡改** | 执行期间写入 `out/` 的文件以不透明 file ID 返回。归档会复制进可写目录之外的 `keep/`，后续命令改不了已交付文件。 |
 | **所有资源都有边界** | 上传大小、命令长度、输入数量、stdout（保留首尾）、产物数量与大小、工作区配额、归档配额、超时、并发和保留期。 |
 | **文件是一等公民** | 上传、带输入执行、列目录、按不透明 ID 或工作区路径下载、归档、删除。带附件走流式 multipart，普通调用走 JSON。 |
+| **大文件** | 上传边读边落盘，不把整个请求体读进内存；下载支持 `Range` 和 `HEAD`。 |
 | **默认 fail-closed** | 只读根文件系统、丢弃能力、`no-new-privileges`、tini 作为 PID 1。以 root 启动却缺少所需能力时拒绝启动。 |
 | **自带可观测性** | `/ready` 就绪检查、`/metrics` Prometheus 指标、文本或 JSON 结构化日志。 |
-| **小到可以通读** | 仅标准库的 Go 实现，运维面很小。 |
+| **小到可以通读** | HTTP 层使用 Gin，SDK 保持仅标准库，运维面很小。 |
 
 ## 快速开始
 
@@ -210,7 +211,7 @@ python3 examples/python/runbox_client.py exec "echo hello"
 - token 为 1–256 个可见 ASCII 字符，不能包含空格。
 - namespace 和 principal 各为 1–128 个字符，字符集 `[A-Za-z0-9._-]`。
 - 两种形式都会规范化为一个 canonical SHA-256 key，存储路径使用该 key。
-- 原始 token 不落盘；scoped 的 namespace/principal 作为身份元数据保存在 `state/identities/<key>.json`。
+- 原始 token 不落盘；scoped 的 namespace/principal 和 UID 分配保存在 `state/runbox.db` 的 `identities` 表中。
 - file ID 绑定所属身份；访问其他身份的 file ID 返回 `403`。
 
 鉴权使用 `Authorization: Bearer <RUNBOX_API_KEY>`。`/health` 和 `/ready` 不鉴权，其余接口都需要 Bearer token。
@@ -225,10 +226,12 @@ python3 examples/python/runbox_client.py exec "echo hello"
 | GET | `/v1/capabilities` | 限额与检测到的工具 |
 | POST | `/v1/exec` | 执行命令（JSON 或 multipart） |
 | POST | `/v1/files` | 上传单个文件 |
+| POST | `/v1/files/batch` | 一次上传多个文件 |
 | GET | `/v1/files/{id}` | 按 ID 下载 |
 | POST | `/v1/files/{id}/keep` | 归档为长期文件 |
 | GET | `/v1/path?path=out/x` | 按工作区路径下载 |
 | GET | `/v1/list?path=out` | 列工作区目录 |
+| GET | `/v1/archive?path=out&path=tmp` | 按 tar 归档批量下载文件或目录 |
 | DELETE | `/v1/workspace[?purge=true]` | 删除工作区（可选连归档一起删） |
 
 完整请求/响应说明见 [docs/api.md](docs/api.md)。
@@ -253,8 +256,9 @@ RUNBOX_ROOT/
 │   └── ...
 ├── keep/<identity-key>/             不可变交付，属主为 runner
 └── state/
-    ├── uids/<identity-key>          稳定的 UID 分配
-    └── identities/<key>.json        身份元数据（绝不包含 token）
+    ├── runbox.db                    身份、UID 和元数据（SQLite）
+    ├── runbox.db-wal                runner 运行期间的 WAL 日志
+    └── runbox.db-shm                runner 运行期间的共享内存索引
 ```
 
 - 命令在独立进程组、以该身份的 UID 执行；超时只杀进程组，不动容器。
@@ -304,6 +308,8 @@ RUNBOX_ROOT/
 | `RUNBOX_MAX_STDOUT_BYTES` | `200KiB` | 捕获的 stdout+stderr 上限，保留首尾。 |
 | `RUNBOX_MAX_OUTPUT_FILES` | `20` | 单次执行返回的产物数量。 |
 | `RUNBOX_MAX_OUTPUT_BYTES` | `200MiB` | 单次执行返回的产物总大小。 |
+| `RUNBOX_MAX_BATCH_FILES` | `1000` | 单次批量上传或 tar 归档的文件数上限。 |
+| `RUNBOX_MAX_BATCH_BYTES` | `1GiB` | 单次 tar 归档下载的总大小上限。 |
 | `RUNBOX_QUOTA_BYTES` | `1GiB` | 单工作区配额；超出后拒绝执行。`0` 表示不限。 |
 | `RUNBOX_KEEP_BYTES` | `1GiB` | 单身份归档配额。`0` 表示不限。 |
 | `RUNBOX_RETENTION` | `7d` | 工作区闲置保留期。 |
@@ -378,7 +384,6 @@ Dify 的 sandbox 是 Dify 技术栈的一部分，按任务隔离文件。Runbox
 ## 路线图
 
 - [ ] 出网策略钩子，用于禁止命令访问互联网
-- [ ] 大文件下载支持 HTTP Range
 - [ ] 多副本部署所需的共享存储或按身份路由
 - [ ] 可选的按身份硬磁盘配额
 - [ ] 维护中的 seccomp profile 与 gVisor 部署配方

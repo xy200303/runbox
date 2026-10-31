@@ -1,7 +1,8 @@
 # Contributing
 
-Thanks for taking a look. This project is intentionally small and
-stdlib-only; please keep it that way unless there is a strong reason.
+Thanks for taking a look. This project is intentionally small. The public SDK
+is stdlib-only; the HTTP server uses Gin. Keep new dependencies out of
+`sandbox/` unless there is a strong reason.
 
 ## Development
 

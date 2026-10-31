@@ -75,10 +75,9 @@ keeps it satisfying `sandbox.Backend`. The SDK does not depend on the server.
 │   └── <key>/                          0750, owned by the runner (root)
 │       └── <same relative path as out/file>
 └── state/
-    ├── uids/
-    │   └── <key>                      persisted UID assignment, 0600
-    └── identities/
-        └── <key>.json                 mode + namespace/principal metadata, 0640
+    ├── runbox.db                     SQLite: identities, UIDs, metadata
+    ├── runbox.db-wal                 WAL journal while the runner is active
+    └── runbox.db-shm                 shared-memory index while active
 ```
 
 `<root>` is `/workspace` in the image and `.runbox` by default.
@@ -95,15 +94,16 @@ survive the agent, so they live in a runner-owned tree with mode `0640`.
   Supplying both forms, or half of the scoped form, is rejected.
 - Both forms normalize to a SHA-256 canonical key. The key, not the raw value,
   is used for directories, UID assignments, locks and file IDs. Scoped
-  namespace/principal are stored in `state/identities/<key>.json` for future
-  tenant-level operations; tokens are never persisted.
+  namespace/principal are stored in the `identities` table of
+  `state/runbox.db` for future tenant-level operations; tokens are never
+  persisted.
 - On Linux, if the process is root, each identity receives a UID from
-  `[RUNBOX_UID_MIN, RUNBOX_UID_MAX)`. The assignment is persisted under
-  `state/uids/<key>`, so the same identity keeps the same UID across
-  restarts and file ownership stays valid.
-- The pool is finite. If exhausted, a stable UID is derived from the identity
-  key by hashing. The per-identity lock and `0750` directories remain the
-  primary defenses.
+  `[RUNBOX_UID_MIN, RUNBOX_UID_MAX)`. The assignment is written to SQLite, so
+  the same identity keeps the same UID across restarts and file ownership
+  stays valid.
+- The pool is finite. If it is exhausted, the request fails with
+  `409 uid_exhausted`; UIDs are never derived or reused implicitly, because
+  that would conflict with files already owned by another identity.
 - Workspace directories and uploads are `chown`ed to that UID. Commands run
   with `syscall.Credential`, clearing supplementary groups.
 - If a workspace's `files/` or `out/` directory has a different owner (for

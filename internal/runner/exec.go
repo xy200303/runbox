@@ -53,7 +53,10 @@ func (r *Runner) Exec(ctx context.Context, identity sandbox.Identity, command st
 		return nil, sandbox.Conflict("busy", "runner is at capacity, try again shortly")
 	}
 
-	uid, drop := r.execUID(key)
+	uid, drop, err := r.execUID(identity)
+	if err != nil {
+		return nil, err
+	}
 	workspace, err := r.ensureWorkspace(identity, uid, drop)
 	if err != nil {
 		return nil, sandbox.Internal("create workspace: " + err.Error())

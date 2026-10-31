@@ -27,6 +27,8 @@ type Config struct {
 	MaxStdoutBytes           int
 	MaxOutputFiles           int
 	MaxOutputBytes           int64
+	MaxBatchFiles            int
+	MaxBatchBytes            int64
 	QuotaBytes               int64
 	KeepBytes                int64
 	Retention                time.Duration
@@ -60,6 +62,8 @@ func FromEnv(get func(string) string) (Config, error) {
 		MaxStdoutBytes:  sandbox.DefaultMaxStdoutBytes,
 		MaxOutputFiles:  sandbox.DefaultMaxOutputFiles,
 		MaxOutputBytes:  sandbox.DefaultMaxOutputBytes,
+		MaxBatchFiles:   1000,
+		MaxBatchBytes:   1 << 30,
 		QuotaBytes:      sandbox.DefaultQuotaBytes,
 		KeepBytes:       sandbox.DefaultKeepBytes,
 		Retention:       sandbox.DefaultRetention,
@@ -119,6 +123,16 @@ func FromEnv(get func(string) string) (Config, error) {
 	if value := get("RUNBOX_MAX_OUTPUT_BYTES"); value != "" {
 		if cfg.MaxOutputBytes, err = ParseBytes(value); err != nil {
 			return Config{}, fmt.Errorf("RUNBOX_MAX_OUTPUT_BYTES: %w", err)
+		}
+	}
+	if value := get("RUNBOX_MAX_BATCH_FILES"); value != "" {
+		if cfg.MaxBatchFiles, err = parseInt(value); err != nil {
+			return Config{}, fmt.Errorf("RUNBOX_MAX_BATCH_FILES: %w", err)
+		}
+	}
+	if value := get("RUNBOX_MAX_BATCH_BYTES"); value != "" {
+		if cfg.MaxBatchBytes, err = ParseBytes(value); err != nil {
+			return Config{}, fmt.Errorf("RUNBOX_MAX_BATCH_BYTES: %w", err)
 		}
 	}
 	if value := get("RUNBOX_QUOTA_BYTES"); value != "" {
@@ -224,6 +238,9 @@ func (c Config) Validate() error {
 	if c.MaxOutputFiles < 0 || c.MaxOutputBytes < 0 || c.QuotaBytes < 0 || c.KeepBytes < 0 {
 		return fmt.Errorf("limits must not be negative")
 	}
+	if c.MaxBatchFiles <= 0 || c.MaxBatchBytes <= 0 {
+		return fmt.Errorf("RUNBOX_MAX_BATCH_FILES and RUNBOX_MAX_BATCH_BYTES must be positive")
+	}
 	if c.Retention <= 0 || c.SweepInterval <= 0 {
 		return fmt.Errorf("RUNBOX_RETENTION and RUNBOX_SWEEP_INTERVAL must be positive")
 	}
@@ -251,6 +268,8 @@ func (c Config) Limits() sandbox.Limits {
 		MaxStdoutBytes:   c.MaxStdoutBytes,
 		MaxOutputFiles:   c.MaxOutputFiles,
 		MaxOutputBytes:   c.MaxOutputBytes,
+		MaxBatchFiles:    c.MaxBatchFiles,
+		MaxBatchBytes:    c.MaxBatchBytes,
 		QuotaBytes:       c.QuotaBytes,
 		KeepBytes:        c.KeepBytes,
 		RetentionSeconds: int64(c.Retention / time.Second),

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"archive/tar"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,31 +9,35 @@ import (
 	"io"
 	"log/slog"
 	"mime"
+	"mime/multipart"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/xy200303/runbox/sandbox"
 )
 
-func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, sandbox.Health{
+func (s *Server) handleHealth(c *gin.Context) {
+	writeJSON(c, http.StatusOK, sandbox.Health{
 		Status:        "healthy",
 		Version:       s.cfg.Version,
 		UptimeSeconds: int64(time.Since(s.started).Seconds()),
 	})
 }
 
-func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
-	if err := s.readiness(r.Context()); err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+func (s *Server) handleReady(c *gin.Context) {
+	if err := s.readiness(c.Request.Context()); err != nil {
+		writeJSON(c, http.StatusServiceUnavailable, map[string]string{
 			"status":  "not_ready",
 			"message": err.Error(),
 		})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+	writeJSON(c, http.StatusOK, map[string]string{"status": "ready"})
 }
 
 func (s *Server) readiness(ctx context.Context) error {
@@ -46,13 +51,13 @@ func (s *Server) readiness(ctx context.Context) error {
 	return s.readyErr
 }
 
-func (s *Server) handleMetrics(w http.ResponseWriter, _ *http.Request) {
-	s.metrics.write(w, s.cfg.Version, time.Since(s.started))
+func (s *Server) handleMetrics(c *gin.Context) {
+	s.metrics.write(c.Writer, s.cfg.Version, time.Since(s.started))
 }
 
-func (s *Server) handleCapabilities(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleCapabilities(c *gin.Context) {
 	osName, arch := platform()
-	writeJSON(w, http.StatusOK, sandbox.Capabilities{
+	writeJSON(c, http.StatusOK, sandbox.Capabilities{
 		Version:  s.cfg.Version,
 		OS:       osName,
 		Arch:     arch,
@@ -61,50 +66,27 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-func (s *Server) handleExec(w http.ResponseWriter, r *http.Request) {
-	identity, err := s.identity(r)
+func (s *Server) handleExec(c *gin.Context) {
+	identity, err := s.identity(c)
 	if err != nil {
-		s.fail(w, r, err)
+		s.fail(c, err)
 		return
 	}
 	s.metrics.execTotal.Add(1)
 	s.metrics.activeExecs.Add(1)
 	defer s.metrics.activeExecs.Add(-1)
-	r.Body = http.MaxBytesReader(w, r.Body, s.cfg.MaxRequestBytes)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, s.cfg.MaxRequestBytes)
 
 	var command string
 	var inputs []string
 	var timeout time.Duration
-	mediaType, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	mediaType, _, _ := mime.ParseMediaType(c.GetHeader("Content-Type"))
 	switch mediaType {
 	case "multipart/form-data":
-		if err := r.ParseMultipartForm(32 << 20); err != nil {
-			s.failExec(w, r, bodyError(err, "invalid multipart body"))
+		command, inputs, timeout, err = s.parseExecMultipart(c, identity)
+		if err != nil {
+			s.failExec(c, err)
 			return
-		}
-		defer r.MultipartForm.RemoveAll()
-		if len(r.MultipartForm.Value["inputs"])+len(r.MultipartForm.File["files"]) > s.cfg.MaxInputs {
-			s.failExec(w, r, sandbox.BadRequest(fmt.Sprintf("too many inputs (limit %d)", s.cfg.MaxInputs)))
-			return
-		}
-		command = r.FormValue("command")
-		timeout = parseTimeoutSeconds(r.FormValue("timeout_seconds"))
-		inputs = append(inputs, r.MultipartForm.Value["inputs"]...)
-		for _, header := range r.MultipartForm.File["files"] {
-			file, err := header.Open()
-			if err != nil {
-				s.failExec(w, r, sandbox.BadRequest("cannot read uploaded file: "+err.Error()))
-				return
-			}
-			counting := &countingReader{reader: file}
-			fileID, saveErr := s.runner.SaveFile(r.Context(), identity, header.Filename, counting, header.Size)
-			s.metrics.uploadBytes.Add(counting.n)
-			file.Close()
-			if saveErr != nil {
-				s.failExec(w, r, saveErr)
-				return
-			}
-			inputs = append(inputs, fileID)
 		}
 	case "application/json", "":
 		var payload struct {
@@ -112,9 +94,9 @@ func (s *Server) handleExec(w http.ResponseWriter, r *http.Request) {
 			TimeoutSeconds int      `json:"timeout_seconds"`
 			Inputs         []string `json:"inputs"`
 		}
-		decoder := json.NewDecoder(r.Body)
-		if err := decoder.Decode(&payload); err != nil && !errors.Is(err, io.EOF) {
-			s.failExec(w, r, bodyError(err, "invalid JSON body"))
+		decoder := json.NewDecoder(c.Request.Body)
+		if decodeErr := decoder.Decode(&payload); decodeErr != nil && !errors.Is(decodeErr, io.EOF) {
+			s.failExec(c, bodyError(decodeErr, "invalid JSON body"))
 			return
 		}
 		command = payload.Command
@@ -123,139 +105,346 @@ func (s *Server) handleExec(w http.ResponseWriter, r *http.Request) {
 		}
 		inputs = payload.Inputs
 		if len(inputs) > s.cfg.MaxInputs {
-			s.failExec(w, r, sandbox.BadRequest(fmt.Sprintf("too many inputs (limit %d)", s.cfg.MaxInputs)))
+			s.failExec(c, sandbox.BadRequest(fmt.Sprintf("too many inputs (limit %d)", s.cfg.MaxInputs)))
 			return
 		}
 	default:
-		s.failExec(w, r, sandbox.UnsupportedMediaType("Content-Type must be application/json or multipart/form-data"))
+		s.failExec(c, sandbox.UnsupportedMediaType("Content-Type must be application/json or multipart/form-data"))
 		return
 	}
 
-	result, err := s.runner.Exec(r.Context(), identity, command, inputs, timeout)
+	result, err := s.runner.Exec(c.Request.Context(), identity, command, inputs, timeout)
 	if err != nil {
-		s.failExec(w, r, err)
+		s.failExec(c, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(c, http.StatusOK, result)
 }
 
-func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
-	identity, err := s.identity(r)
+// parseExecMultipart reads a multipart exec request without buffering file
+// bodies in memory. Values are bounded per field; files stream into the
+// identity workspace as they are read.
+func (s *Server) parseExecMultipart(c *gin.Context, identity sandbox.Identity) (string, []string, time.Duration, error) {
+	reader, err := c.Request.MultipartReader()
 	if err != nil {
-		s.fail(w, r, err)
-		return
+		return "", nil, 0, bodyError(err, "invalid multipart body")
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, s.cfg.MaxRequestBytes)
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		file, header, err = r.FormFile("files")
+	var command string
+	var timeout time.Duration
+	inputs := make([]string, 0)
+	for {
+		part, err := reader.NextPart()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return "", nil, 0, bodyError(err, "invalid multipart body")
+		}
+		name := part.FormName()
+		filename := part.FileName()
+		if filename == "" {
+			value, valueErr := s.readPartValue(part, name)
+			part.Close()
+			if valueErr != nil {
+				return "", nil, 0, valueErr
+			}
+			switch name {
+			case "command":
+				command = value
+			case "timeout_seconds":
+				timeout = parseTimeoutSeconds(value)
+			case "inputs":
+				if len(inputs)+1 > s.cfg.MaxInputs {
+					return "", nil, 0, sandbox.BadRequest(fmt.Sprintf("too many inputs (limit %d)", s.cfg.MaxInputs))
+				}
+				inputs = append(inputs, value)
+			}
+			continue
+		}
+		if name != "files" {
+			_, _ = io.Copy(io.Discard, part)
+			part.Close()
+			continue
+		}
+		if len(inputs)+1 > s.cfg.MaxInputs {
+			part.Close()
+			return "", nil, 0, sandbox.BadRequest(fmt.Sprintf("too many inputs (limit %d)", s.cfg.MaxInputs))
+		}
+		counting := &countingReader{reader: part}
+		fileID, saveErr := s.runner.SaveFile(c.Request.Context(), identity, filename, counting, -1)
+		part.Close()
+		s.metrics.uploadBytes.Add(counting.n)
+		if saveErr != nil {
+			return "", nil, 0, saveErr
+		}
+		inputs = append(inputs, fileID)
 	}
-	if err != nil {
-		s.fail(w, r, bodyError(err, "missing file field"))
-		return
-	}
-	defer file.Close()
-	counting := &countingReader{reader: file}
-	fileID, err := s.runner.SaveFile(r.Context(), identity, header.Filename, counting, header.Size)
-	s.metrics.uploadBytes.Add(counting.n)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, sandbox.UploadedFile{FileID: fileID, Name: header.Filename, Size: header.Size})
+	return command, inputs, timeout, nil
 }
 
-func (s *Server) handleFile(w http.ResponseWriter, r *http.Request) {
-	identity, err := s.identity(r)
-	if err != nil {
-		s.fail(w, r, err)
-		return
+func (s *Server) readPartValue(part *multipart.Part, name string) (string, error) {
+	limit := int64(4096)
+	switch name {
+	case "command":
+		limit = s.cfg.MaxCommandBytes
+		if limit <= 0 {
+			limit = 64 << 10
+		}
+	case "timeout_seconds":
+		limit = 32
 	}
-	reader, name, err := s.runner.OpenFile(r.Context(), identity, r.PathValue("id"))
+	data, err := io.ReadAll(io.LimitReader(part, limit+1))
 	if err != nil {
-		s.fail(w, r, err)
-		return
+		return "", bodyError(err, "cannot read multipart field")
 	}
-	defer reader.Close()
-	s.metrics.downloadBytes.Add(streamFile(w, r, name, reader))
+	if int64(len(data)) > limit {
+		return "", sandbox.BadRequest(fmt.Sprintf("multipart field %q is too large", name))
+	}
+	return string(data), nil
 }
 
-func (s *Server) handleKeep(w http.ResponseWriter, r *http.Request) {
-	identity, err := s.identity(r)
+func (s *Server) handleUpload(c *gin.Context) {
+	identity, err := s.identity(c)
 	if err != nil {
-		s.fail(w, r, err)
+		s.fail(c, err)
 		return
 	}
-	output, err := s.runner.Archive(r.Context(), identity, r.PathValue("id"))
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, s.cfg.MaxRequestBytes)
+	reader, err := c.Request.MultipartReader()
 	if err != nil {
-		s.fail(w, r, err)
+		s.fail(c, bodyError(err, "invalid multipart body"))
+		return
+	}
+	for {
+		part, err := reader.NextPart()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			s.fail(c, bodyError(err, "invalid multipart body"))
+			return
+		}
+		name := part.FormName()
+		filename := part.FileName()
+		if filename == "" || (name != "file" && name != "files") {
+			_, _ = io.Copy(io.Discard, part)
+			part.Close()
+			continue
+		}
+		counting := &countingReader{reader: part}
+		fileID, saveErr := s.runner.SaveFile(c.Request.Context(), identity, filename, counting, -1)
+		part.Close()
+		s.metrics.uploadBytes.Add(counting.n)
+		if saveErr != nil {
+			s.fail(c, saveErr)
+			return
+		}
+		writeJSON(c, http.StatusOK, sandbox.UploadedFile{
+			FileID: fileID,
+			Name:   sandbox.SanitizeFileName(filename),
+			Size:   counting.n,
+		})
+		return
+	}
+	s.fail(c, sandbox.BadRequest("missing file field"))
+}
+
+func (s *Server) handleUploadBatch(c *gin.Context) {
+	identity, err := s.identity(c)
+	if err != nil {
+		s.fail(c, err)
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, s.cfg.MaxRequestBytes)
+	reader, err := c.Request.MultipartReader()
+	if err != nil {
+		s.fail(c, bodyError(err, "invalid multipart body"))
+		return
+	}
+	files := make([]sandbox.UploadedFile, 0)
+	for {
+		part, err := reader.NextPart()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			s.fail(c, bodyError(err, "invalid multipart body"))
+			return
+		}
+		name := part.FormName()
+		filename := part.FileName()
+		if filename == "" || name != "files" {
+			_, _ = io.Copy(io.Discard, part)
+			part.Close()
+			continue
+		}
+		if len(files) >= s.cfg.MaxBatchFiles {
+			part.Close()
+			s.fail(c, sandbox.BadRequest(fmt.Sprintf("batch exceeds %d files", s.cfg.MaxBatchFiles)))
+			return
+		}
+		counting := &countingReader{reader: part}
+		fileID, saveErr := s.runner.SaveFile(c.Request.Context(), identity, filename, counting, -1)
+		part.Close()
+		s.metrics.uploadBytes.Add(counting.n)
+		if saveErr != nil {
+			s.fail(c, saveErr)
+			return
+		}
+		files = append(files, sandbox.UploadedFile{
+			FileID: fileID,
+			Name:   sandbox.SanitizeFileName(filename),
+			Size:   counting.n,
+		})
+	}
+	if len(files) == 0 {
+		s.fail(c, sandbox.BadRequest("missing files field"))
+		return
+	}
+	writeJSON(c, http.StatusOK, map[string]any{"files": files})
+}
+
+// handleBatchDownload streams the requested workspace files as a tar archive.
+// Paths are relative to the caller's workspace and may name files or
+// directories.
+func (s *Server) handleBatchDownload(c *gin.Context) {
+	identity, err := s.identity(c)
+	if err != nil {
+		s.fail(c, err)
+		return
+	}
+	files, err := s.runner.BatchFiles(c.Request.Context(), identity, c.QueryArray("path"))
+	if err != nil {
+		s.fail(c, err)
+		return
+	}
+
+	c.Header("Content-Type", "application/x-tar")
+	c.Header("Content-Disposition", attachmentHeader("runbox-files.tar"))
+	c.Status(http.StatusOK)
+
+	writer := tar.NewWriter(c.Writer)
+	var written int64
+	for _, file := range files {
+		reader, openErr := os.Open(file.Full)
+		if openErr != nil {
+			slog.Warn("batch download skipped file", "path", file.Path, "error", openErr.Error())
+			break
+		}
+		header := &tar.Header{
+			Name:    file.Path,
+			Mode:    0o644,
+			Size:    file.Size,
+			ModTime: file.ModTime,
+		}
+		if writeErr := writer.WriteHeader(header); writeErr != nil {
+			reader.Close()
+			slog.Warn("batch download header failed", "path", file.Path, "error", writeErr.Error())
+			break
+		}
+		copied, copyErr := io.Copy(writer, reader)
+		reader.Close()
+		written += copied
+		if copyErr != nil {
+			slog.Warn("batch download interrupted", "path", file.Path, "error", copyErr.Error())
+			break
+		}
+	}
+	if closeErr := writer.Close(); closeErr != nil {
+		slog.Warn("batch download close failed", "error", closeErr.Error())
+	}
+	s.metrics.downloadBytes.Add(written)
+}
+
+func (s *Server) handleFile(c *gin.Context) {
+	identity, err := s.identity(c)
+	if err != nil {
+		s.fail(c, err)
+		return
+	}
+	reader, name, err := s.runner.OpenFile(c.Request.Context(), identity, c.Param("id"))
+	if err != nil {
+		s.fail(c, err)
+		return
+	}
+	s.serveDownload(c, name, reader)
+}
+
+func (s *Server) handleKeep(c *gin.Context) {
+	identity, err := s.identity(c)
+	if err != nil {
+		s.fail(c, err)
+		return
+	}
+	output, err := s.runner.Archive(c.Request.Context(), identity, c.Param("id"))
+	if err != nil {
+		s.fail(c, err)
 		return
 	}
 	s.metrics.archiveTotal.Add(1)
-	writeJSON(w, http.StatusOK, output)
+	writeJSON(c, http.StatusOK, output)
 }
 
-func (s *Server) handlePath(w http.ResponseWriter, r *http.Request) {
-	identity, err := s.identity(r)
+func (s *Server) handlePath(c *gin.Context) {
+	identity, err := s.identity(c)
 	if err != nil {
-		s.fail(w, r, err)
+		s.fail(c, err)
 		return
 	}
-	path := r.URL.Query().Get("path")
+	path := c.Query("path")
 	if strings.TrimSpace(path) == "" {
-		s.fail(w, r, sandbox.BadRequest("path query parameter is required"))
+		s.fail(c, sandbox.BadRequest("path query parameter is required"))
 		return
 	}
-	reader, name, err := s.runner.OpenPath(r.Context(), identity, path)
+	reader, name, err := s.runner.OpenPath(c.Request.Context(), identity, path)
 	if err != nil {
-		s.fail(w, r, err)
+		s.fail(c, err)
 		return
 	}
-	defer reader.Close()
-	s.metrics.downloadBytes.Add(streamFile(w, r, name, reader))
+	s.serveDownload(c, name, reader)
 }
 
-func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
-	identity, err := s.identity(r)
+func (s *Server) handleList(c *gin.Context) {
+	identity, err := s.identity(c)
 	if err != nil {
-		s.fail(w, r, err)
+		s.fail(c, err)
 		return
 	}
-	entries, err := s.runner.List(r.Context(), identity, r.URL.Query().Get("path"))
+	entries, err := s.runner.List(c.Request.Context(), identity, c.Query("path"))
 	if err != nil {
-		s.fail(w, r, err)
+		s.fail(c, err)
 		return
 	}
 	if entries == nil {
 		entries = []sandbox.ListEntry{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"entries": entries})
+	writeJSON(c, http.StatusOK, map[string]any{"entries": entries})
 }
 
-func (s *Server) handleDeleteWorkspace(w http.ResponseWriter, r *http.Request) {
-	identity, err := s.identity(r)
+func (s *Server) handleDeleteWorkspace(c *gin.Context) {
+	identity, err := s.identity(c)
 	if err != nil {
-		s.fail(w, r, err)
+		s.fail(c, err)
 		return
 	}
 	purge := false
-	if value := strings.TrimSpace(r.URL.Query().Get("purge")); value != "" {
+	if value := strings.TrimSpace(c.Query("purge")); value != "" {
 		parsed, err := strconv.ParseBool(value)
 		if err != nil {
-			s.fail(w, r, sandbox.BadRequest("purge must be a boolean"))
+			s.fail(c, sandbox.BadRequest("purge must be a boolean"))
 			return
 		}
 		purge = parsed
 	}
-	if err := s.runner.DeleteWorkspace(r.Context(), identity, purge); err != nil {
-		s.fail(w, r, err)
+	if err := s.runner.DeleteWorkspace(c.Request.Context(), identity, purge); err != nil {
+		s.fail(c, err)
 		return
 	}
 	s.metrics.workspaceDeletes.Add(1)
-	writeJSON(w, http.StatusOK, map[string]bool{"deleted": true})
+	writeJSON(c, http.StatusOK, map[string]bool{"deleted": true})
 }
 
-func (s *Server) failExec(w http.ResponseWriter, r *http.Request, err error) {
+func (s *Server) failExec(c *gin.Context, err error) {
 	reason := "other"
 	var apiErr *sandbox.Error
 	if errors.As(err, &apiErr) {
@@ -267,10 +456,10 @@ func (s *Server) failExec(w http.ResponseWriter, r *http.Request, err error) {
 		}
 	}
 	s.metrics.observeExecError(reason)
-	s.fail(w, r, err)
+	s.fail(c, err)
 }
 
-func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
+func (s *Server) fail(c *gin.Context, err error) {
 	apiErr := &sandbox.Error{Status: http.StatusInternalServerError, Code: "internal", Message: "internal server error"}
 	var typed *sandbox.Error
 	if errors.As(err, &typed) {
@@ -284,9 +473,12 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		apiErr.Message = http.StatusText(apiErr.Status)
 	}
 	if apiErr.Status >= 500 {
-		s.log.Error("request failed", "path", r.URL.Path, "error", apiErr.Message)
+		s.log.Error("request failed", "path", c.Request.URL.Path, "error", apiErr.Message)
 	}
-	writeJSON(w, apiErr.Status, apiErr)
+	if c.Writer.Written() {
+		return
+	}
+	writeJSON(c, apiErr.Status, apiErr)
 }
 
 func bodyError(err error, fallback string) error {
@@ -300,15 +492,29 @@ func bodyError(err error, fallback string) error {
 	return sandbox.BadRequest(fallback + ": " + err.Error())
 }
 
-func streamFile(w http.ResponseWriter, r *http.Request, name string, reader io.Reader) int64 {
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", attachmentHeader(name))
-	w.WriteHeader(http.StatusOK)
-	written, err := io.Copy(w, reader)
-	if err != nil {
-		slog.Warn("stream interrupted", "path", r.URL.Path, "error", err.Error())
+// serveDownload streams a file and supports Range and HEAD when the runner
+// returns an *os.File. The fallback path remains a plain stream.
+func (s *Server) serveDownload(c *gin.Context, name string, reader io.ReadCloser) {
+	defer reader.Close()
+	c.Header("Content-Type", "application/octet-stream")
+	c.Header("Content-Disposition", attachmentHeader(name))
+
+	if file, ok := reader.(*os.File); ok {
+		if info, err := file.Stat(); err == nil {
+			http.ServeContent(c.Writer, c.Request, name, info.ModTime(), file)
+			if size := c.Writer.Size(); size > 0 {
+				s.metrics.downloadBytes.Add(int64(size))
+			}
+			return
+		}
 	}
-	return written
+
+	c.Status(http.StatusOK)
+	written, err := io.Copy(c.Writer, reader)
+	if err != nil {
+		slog.Warn("stream interrupted", "path", c.Request.URL.Path, "error", err.Error())
+	}
+	s.metrics.downloadBytes.Add(written)
 }
 
 func parseTimeoutSeconds(value string) time.Duration {

@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -15,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gin-gonic/gin"
 
 	"github.com/xy200303/runbox/internal/config"
 	"github.com/xy200303/runbox/internal/runner"
@@ -50,55 +51,77 @@ func New(cfg config.Config, r *runner.Runner, logger *slog.Logger) *Server {
 		metrics:  &metrics{},
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", s.handleHealth)
-	mux.HandleFunc("GET /ready", s.handleReady)
-	mux.HandleFunc("GET /metrics", s.authenticated(s.handleMetrics))
-	mux.HandleFunc("GET /v1/capabilities", s.authenticated(s.handleCapabilities))
-	mux.HandleFunc("POST /v1/exec", s.authenticated(s.handleExec))
-	mux.HandleFunc("POST /v1/files", s.authenticated(s.handleUpload))
-	mux.HandleFunc("GET /v1/files/{id}", s.authenticated(s.handleFile))
-	mux.HandleFunc("POST /v1/files/{id}/keep", s.authenticated(s.handleKeep))
-	mux.HandleFunc("GET /v1/path", s.authenticated(s.handlePath))
-	mux.HandleFunc("GET /v1/list", s.authenticated(s.handleList))
-	mux.HandleFunc("DELETE /v1/workspace", s.authenticated(s.handleDeleteWorkspace))
+	gin.SetMode(gin.ReleaseMode)
+	engine := gin.New()
+	engine.RedirectTrailingSlash = false
+	engine.RedirectFixedPath = false
+	engine.HandleMethodNotAllowed = true
+	_ = engine.SetTrustedProxies(nil)
 
-	s.handler = s.recoverer(s.accessLog(s.securityHeaders(mux)))
+	engine.Use(s.recovery(), s.securityHeaders(), s.accessLog())
+
+	engine.GET("/health", s.handleHealth)
+	engine.GET("/ready", s.handleReady)
+	engine.GET("/metrics", s.requireAuth(), s.handleMetrics)
+	engine.GET("/v1/capabilities", s.requireAuth(), s.handleCapabilities)
+	engine.POST("/v1/exec", s.requireAuth(), s.handleExec)
+	engine.POST("/v1/files", s.requireAuth(), s.handleUpload)
+	engine.POST("/v1/files/batch", s.requireAuth(), s.handleUploadBatch)
+	engine.GET("/v1/files/:id", s.requireAuth(), s.handleFile)
+	engine.HEAD("/v1/files/:id", s.requireAuth(), s.handleFile)
+	engine.POST("/v1/files/:id/keep", s.requireAuth(), s.handleKeep)
+	engine.GET("/v1/path", s.requireAuth(), s.handlePath)
+	engine.HEAD("/v1/path", s.requireAuth(), s.handlePath)
+	engine.GET("/v1/list", s.requireAuth(), s.handleList)
+	engine.GET("/v1/archive", s.requireAuth(), s.handleBatchDownload)
+	engine.DELETE("/v1/workspace", s.requireAuth(), s.handleDeleteWorkspace)
+
+	engine.NoRoute(func(c *gin.Context) {
+		s.fail(c, sandbox.NotFound("not found"))
+	})
+	engine.NoMethod(func(c *gin.Context) {
+		s.fail(c, sandbox.NewError(http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed"))
+	})
+
+	s.handler = engine
 	return s
 }
 
 // Handler returns the HTTP handler.
 func (s *Server) Handler() http.Handler { return s.handler }
 
-func (s *Server) authenticated(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+func (s *Server) requireAuth() gin.HandlerFunc {
+	return func(c *gin.Context) {
 		if s.cfg.AllowAnonymous {
-			next(w, r)
+			c.Next()
 			return
 		}
 		if s.cfg.APIKey == "" {
-			s.fail(w, r, sandbox.Unauthorized("runner API key is not configured"))
+			s.fail(c, sandbox.Unauthorized("runner API key is not configured"))
+			c.Abort()
 			return
 		}
-		parts := strings.Fields(r.Header.Get("Authorization"))
+		parts := strings.Fields(c.GetHeader("Authorization"))
 		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || parts[1] == "" {
-			s.fail(w, r, sandbox.Unauthorized("missing or invalid Authorization: Bearer token"))
+			s.fail(c, sandbox.Unauthorized("missing or invalid Authorization: Bearer token"))
+			c.Abort()
 			return
 		}
 		if subtle.ConstantTimeCompare([]byte(parts[1]), []byte(s.cfg.APIKey)) != 1 {
-			s.fail(w, r, sandbox.Unauthorized("invalid bearer token"))
+			s.fail(c, sandbox.Unauthorized("invalid bearer token"))
+			c.Abort()
 			return
 		}
-		next(w, r)
+		c.Next()
 	}
 }
 
 // identity reads the two supported identity forms. Supplying both forms, or
 // only half of namespace+principal, is rejected instead of merged.
-func (s *Server) identity(r *http.Request) (sandbox.Identity, error) {
-	token := strings.TrimSpace(r.Header.Get("X-Runbox-Identity"))
-	namespace := strings.TrimSpace(r.Header.Get("X-Runbox-Namespace"))
-	principal := strings.TrimSpace(r.Header.Get("X-Runbox-Principal"))
+func (s *Server) identity(c *gin.Context) (sandbox.Identity, error) {
+	token := strings.TrimSpace(c.GetHeader("X-Runbox-Identity"))
+	namespace := strings.TrimSpace(c.GetHeader("X-Runbox-Namespace"))
+	principal := strings.TrimSpace(c.GetHeader("X-Runbox-Principal"))
 
 	if token != "" && (namespace != "" || principal != "") {
 		return sandbox.Identity{}, sandbox.BadRequest("ambiguous identity: send either X-Runbox-Identity or X-Runbox-Namespace + X-Runbox-Principal")
@@ -120,76 +143,56 @@ func (s *Server) identity(r *http.Request) (sandbox.Identity, error) {
 	return identity, nil
 }
 
-func (s *Server) securityHeaders(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("Cache-Control", "no-store")
-		next.ServeHTTP(w, r)
-	})
+func (s *Server) securityHeaders() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("Cache-Control", "no-store")
+		c.Next()
+	}
 }
 
-func (s *Server) accessLog(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func (s *Server) accessLog() gin.HandlerFunc {
+	return func(c *gin.Context) {
 		started := time.Now()
 		requestID := newRequestID()
-		w.Header().Set("X-Request-Id", requestID)
-		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
-		next.ServeHTTP(recorder, r)
-		s.metrics.observeStatus(recorder.status)
+		c.Header("X-Request-Id", requestID)
+		c.Next()
+
+		status := c.Writer.Status()
+		size := int64(c.Writer.Size())
+		if size < 0 {
+			size = 0
+		}
+		s.metrics.observeStatus(status)
 		s.log.Info("request",
 			"request_id", requestID,
-			"method", r.Method,
-			"path", r.URL.Path,
-			"status", recorder.status,
-			"bytes", recorder.bytes,
+			"method", c.Request.Method,
+			"path", c.Request.URL.Path,
+			"status", status,
+			"bytes", size,
 			"duration_ms", time.Since(started).Milliseconds(),
-			"remote", r.RemoteAddr,
+			"remote", c.Request.RemoteAddr,
 		)
-	})
+	}
 }
 
-func (s *Server) recoverer(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func (s *Server) recovery() gin.HandlerFunc {
+	return func(c *gin.Context) {
 		defer func() {
 			if recovered := recover(); recovered != nil {
-				s.log.Error("panic while handling request", "path", r.URL.Path, "panic", recovered)
-				s.fail(w, r, sandbox.Internal("internal server error"))
+				s.log.Error("panic while handling request", "path", c.Request.URL.Path, "panic", recovered)
+				if !c.Writer.Written() {
+					s.fail(c, sandbox.Internal("internal server error"))
+				}
+				c.Abort()
 			}
 		}()
-		next.ServeHTTP(w, r)
-	})
-}
-
-type statusRecorder struct {
-	http.ResponseWriter
-	status int
-	bytes  int64
-}
-
-func (w *statusRecorder) WriteHeader(status int) {
-	w.status = status
-	w.ResponseWriter.WriteHeader(status)
-}
-
-func (w *statusRecorder) Write(p []byte) (int, error) {
-	if w.status == 0 {
-		w.status = http.StatusOK
-	}
-	written, err := w.ResponseWriter.Write(p)
-	w.bytes += int64(written)
-	return written, err
-}
-
-func (w *statusRecorder) Flush() {
-	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
-		flusher.Flush()
+		c.Next()
 	}
 }
 
-func writeJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
+func writeJSON(c *gin.Context, status int, body any) {
+	c.JSON(status, body)
 }
 
 func newRequestID() string {
