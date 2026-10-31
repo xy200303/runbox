@@ -27,14 +27,17 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: website/package-lock.json
       # Pages must be enabled once in repository settings (Build and deployment:
       # GitHub Actions). The CNAME file in website/public pins the domain.
       - uses: actions/configure-pages@v5
+      - run: npm ci
       - run: npm run build
       - uses: actions/upload-pages-artifact@v5
         with:
-          path: website/dist
+          path: website/.vitepress/dist
 
   deploy:
     needs: build

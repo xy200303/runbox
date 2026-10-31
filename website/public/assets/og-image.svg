@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" role="img" aria-label="Runbox — Run in a box.">
+  <rect width="1200" height="630" fill="#0d1117"/>
+
+  <!-- 标记：方框 + 提示符 -->
+  <g transform="translate(80 84)">
+    <rect x="1" y="1" width="70" height="70" rx="16" fill="none" stroke="#34d399" stroke-width="3"/>
+    <path d="M22 29 L31 36 L22 43" fill="none" stroke="#f3f5f7" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M40 43 H54" fill="none" stroke="#f3f5f7" stroke-width="3.2" stroke-linecap="round"/>
+  </g>
+  <text x="172" y="134" font-family="Segoe UI, Helvetica, Arial" font-size="30" font-weight="600" fill="#f3f5f7" letter-spacing="-0.4">Runbox</text>
+  <text x="175" y="100" font-family="Segoe UI, Helvetica, Arial" font-size="16" fill="#6b7683" letter-spacing="0.6">RUN IN A BOX</text>
+
+  <text x="80" y="330" font-family="Segoe UI, Helvetica, Arial" font-size="78" font-weight="600" fill="#f3f5f7" letter-spacing="-2.6">Run in a box.</text>
+  <text x="80" y="392" font-family="Segoe UI, Microsoft YaHei, Arial" font-size="30" fill="#9aa3ad" letter-spacing="0.2">专为单机服务器打造的轻量 Agent 沙箱</text>
+  <text x="80" y="440" font-family="Segoe UI, Microsoft YaHei, Arial" font-size="21" fill="#6b7683">一个容器 · 多身份 · 按 UID 的文件隔离 · 路径式文件接口</text>
+
+  <line x1="80" y1="520" x2="1120" y2="520" stroke="#ffffff" stroke-opacity="0.09" stroke-width="1"/>
+  <text x="80" y="566" font-family="Cascadia Code, Consolas, monospace" font-size="20" fill="#7b8794">runbox.xyun.dev</text>
+  <text x="1120" y="566" text-anchor="end" font-family="Segoe UI, Microsoft YaHei, Arial" font-size="18" fill="#5f6b78">MIT License · v0.2.2</text>
+</svg>

@@ -52,7 +52,7 @@ sdk-node-test:
 sdk-test: sdk-python-test sdk-node-test
 
 website-build:
-	cd website && npm run build
+	cd website && npm ci && npm run build
 
 clean:
-	rm -rf bin .runbox website/dist sdk/node/dist
+	rm -rf bin .runbox website/.vitepress/dist website/.vitepress/cache sdk/node/dist

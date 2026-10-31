@@ -5,6 +5,9 @@
 coverage.out
 dist/
 node_modules/
+website/.vitepress/dist/
+website/.vitepress/cache/
+website/.vitepress/.temp/
 *.egg-info/
 .venv/
 .pytest_cache/
