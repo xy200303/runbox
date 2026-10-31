@@ -1,0 +1,8 @@
+/bin/
+/.runbox/
+/.env
+*.exe
+coverage.out
+dist/
+__pycache__/
+*.pyc

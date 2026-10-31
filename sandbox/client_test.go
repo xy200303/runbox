@@ -1,0 +1,116 @@
+package sandbox
+
+import (
+	"context"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+func TestNewClientValidation(t *testing.T) {
+	if _, err := NewClient(ClientOptions{BaseURL: ""}); err == nil {
+		t.Fatal("empty base URL must be rejected")
+	}
+	if _, err := NewClient(ClientOptions{BaseURL: "ftp://example.com"}); err == nil {
+		t.Fatal("non-http scheme must be rejected")
+	}
+	client, err := NewClient(ClientOptions{BaseURL: "http://example.com/"})
+	if err != nil || !client.Enabled() {
+		t.Fatalf("valid client: %v", err)
+	}
+}
+
+func TestClientRequiresIdentity(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"status":"healthy","version":"test"}`)
+	}))
+	defer server.Close()
+	client, err := NewClient(ClientOptions{BaseURL: server.URL})
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	if _, err := client.Health(context.Background()); err != nil {
+		t.Fatalf("health should not require identity: %v", err)
+	}
+	if _, err := client.Run(context.Background(), ExecRequest{Command: "true"}); err == nil {
+		t.Fatal("exec must require identity")
+	}
+}
+
+func TestClientErrorMapping(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_, _ = io.WriteString(w, `{"code":"busy","message":"runner is at capacity"}`)
+	}))
+	defer server.Close()
+	client, err := NewClient(ClientOptions{BaseURL: server.URL, APIKey: "k", Identity: TokenIdentity("alice")})
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	_, err = client.Run(context.Background(), ExecRequest{Command: "true"})
+	var apiErr *Error
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected *Error, got %T", err)
+	}
+	if apiErr.Status != http.StatusConflict || apiErr.Code != "busy" || apiErr.Message == "" {
+		t.Fatalf("unexpected error: %+v", apiErr)
+	}
+}
+
+func TestClientSendsBearerToken(t *testing.T) {
+	var authorization string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authorization = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"exit_code":0,"stdout":"","files":[]}`)
+	}))
+	defer server.Close()
+	client, err := NewClient(ClientOptions{BaseURL: server.URL, APIKey: "secret", Identity: TokenIdentity("alice")})
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	if _, err := client.Run(context.Background(), ExecRequest{Command: "true"}); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if authorization != "Bearer secret" {
+		t.Fatalf("Authorization = %q", authorization)
+	}
+}
+
+func TestClientDecodesRFC5987Filename(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Disposition", `attachment; filename="____.xlsx"; filename*=UTF-8''%E6%8A%A5%E8%A1%A8.xlsx`)
+		_, _ = io.WriteString(w, "data")
+	}))
+	defer server.Close()
+	client, err := NewClient(ClientOptions{BaseURL: server.URL, Identity: TokenIdentity("alice")})
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	reader, name, err := client.OpenFile(context.Background(), Identity{}, "rbx_x")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer reader.Close()
+	if name != "报表.xlsx" {
+		t.Fatalf("filename = %q", name)
+	}
+}
+
+func TestWithIdentityCopiesClient(t *testing.T) {
+	base := &Client{baseURL: "http://example.com", identity: TokenIdentity("b")}
+	copied := base.WithIdentity(TokenIdentity("c"))
+	if copied.identity != TokenIdentity("c") {
+		t.Fatalf("copy identity = %+v", copied.identity)
+	}
+	if base.identity != TokenIdentity("b") {
+		t.Fatal("WithIdentity mutated the original client")
+	}
+	if !strings.HasPrefix(base.baseURL, "http://") {
+		t.Fatal("unexpected base URL")
+	}
+}

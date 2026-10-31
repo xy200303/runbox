@@ -1,0 +1,13 @@
+.git
+.github
+bin
+.runbox
+.env
+coverage.out
+*.md
+docs
+examples
+docker-compose.yml
+Dockerfile
+__pycache__
+*.pyc
