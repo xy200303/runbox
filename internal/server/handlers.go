@@ -370,21 +370,6 @@ func (s *Server) handleFile(c *gin.Context) {
 	s.serveDownload(c, name, reader)
 }
 
-func (s *Server) handleKeep(c *gin.Context) {
-	identity, err := s.identity(c)
-	if err != nil {
-		s.fail(c, err)
-		return
-	}
-	output, err := s.runner.Archive(c.Request.Context(), identity, c.Param("id"))
-	if err != nil {
-		s.fail(c, err)
-		return
-	}
-	s.metrics.archiveTotal.Add(1)
-	writeJSON(c, http.StatusOK, output)
-}
-
 func (s *Server) handlePath(c *gin.Context) {
 	identity, err := s.identity(c)
 	if err != nil {
@@ -427,16 +412,7 @@ func (s *Server) handleDeleteWorkspace(c *gin.Context) {
 		s.fail(c, err)
 		return
 	}
-	purge := false
-	if value := strings.TrimSpace(c.Query("purge")); value != "" {
-		parsed, err := strconv.ParseBool(value)
-		if err != nil {
-			s.fail(c, sandbox.BadRequest("purge must be a boolean"))
-			return
-		}
-		purge = parsed
-	}
-	if err := s.runner.DeleteWorkspace(c.Request.Context(), identity, purge); err != nil {
+	if err := s.runner.DeleteWorkspace(c.Request.Context(), identity); err != nil {
 		s.fail(c, err)
 		return
 	}

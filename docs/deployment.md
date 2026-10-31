@@ -17,8 +17,8 @@ Prebuilt multi-arch images are published by the `docker` workflow:
 ```text
 ghcr.io/xy200303/runbox:latest
 ghcr.io/xy200303/runbox:latest-minimal
-ghcr.io/xy200303/runbox:v0.1.0
-ghcr.io/xy200303/runbox:v0.1.0-minimal
+ghcr.io/xy200303/runbox:v0.2.0
+ghcr.io/xy200303/runbox:v0.2.0-minimal
 ```
 
 Pin a version tag in production; do not rely on `latest`.
@@ -149,7 +149,7 @@ spec:
     runAsUser: 0
   containers:
     - name: runbox
-      image: registry.example.com/runbox:0.1.0
+      image: registry.example.com/runbox:0.2.0
       env:
         - name: RUNBOX_API_KEY
           valueFrom: {secretKeyRef: {name: runbox, key: api-key}}
@@ -196,7 +196,7 @@ spec:
 |---|---|
 | CPU | Each execution is one shell plus its children. LibreOffice and pandas are the heavy paths. `2` CPUs with concurrency `2` is a reasonable start. |
 | Memory | Container limit `2 GiB` handles two small Python jobs or one LibreOffice conversion with headroom. Raise it before raising concurrency. |
-| Disk | Image ~500 MB (full). Workspace volume: `quota * active identities`, plus the archive (`keep`) if used. |
+| Disk | Image ~500 MB (full). Workspace volume: `quota * active identities`. |
 | pids | `256` stops fork bombs early while allowing LibreOffice helper processes. |
 | Concurrency | Start at `2`. Watch `busy` responses and CPU throttling; scale out with more replicas rather than raising it indefinitely. |
 
@@ -221,8 +221,8 @@ spec:
 2. Recreate the container (`docker compose up -d --force-recreate`). On
    shutdown, Runbox waits for in-flight requests up to
    `RUNBOX_SHUTDOWN_TIMEOUT`, then cancels them and kills their process groups.
-3. Workspaces and archives stay on the volume. UID assignments are re-derived
-   from the identity key; files keep their numeric owner, so ownership remains
+3. Workspaces stay on the volume. UID assignments are re-derived from the
+   identity key; files keep their numeric owner, so ownership remains
    consistent for existing identities.
 4. Recreating the container also clears runtime state installed outside the
    workspace (for example `/tmp` and `/usr`). Doing this daily is a cheap way
@@ -235,21 +235,15 @@ files remain owned by the old UIDs and should be re-chowned or discarded.
 
 The workspace is a cache. Back it up only if intermediate state matters.
 `state/runbox.db` is not a cache: it holds the identity-to-UID mapping. Back it
-up together with `keep/`, or accept that a restore will re-assign UIDs and
-re-chown workspaces.
+up if you want stable UIDs; otherwise a restore re-assigns UIDs and re-chowns
+workspaces.
 
 SQLite runs in WAL mode. For a consistent copy either stop the container or use
 SQLite's backup API/`VACUUM INTO`; copying `runbox.db` while WAL is active can
 miss recent commits. Do not put `state/` on NFS or SMB.
 
-`keep/` is where delivered files live. If those files are the only copy, back
-up the `keep` tree or, better, copy deliverables into object storage from the
-application and treat Runbox as ephemeral:
-
-```bash
-docker run --rm -v runbox-workspace:/data -v "$PWD":/backup alpine \
-  tar czf /backup/runbox-keep.tgz -C /data keep
-```
+Delivered files are not stored twice. The application should download what it
+needs and keep that copy; treat Runbox as ephemeral.
 
 ## Troubleshooting
 
@@ -261,7 +255,6 @@ docker run --rm -v runbox-workspace:/data -v "$PWD":/backup alpine \
 | `400 ambiguous identity` | Both `X-Runbox-Identity` and namespace+principal were sent. |
 | `409 busy` | Concurrency limit reached; add replicas or raise `RUNBOX_MAX_CONCURRENCY`. |
 | `409 quota_exceeded` on exec | Workspace above quota; delete files or raise `RUNBOX_QUOTA_BYTES`. |
-| `409 quota_exceeded` on keep | Archive quota reached; delete the workspace with `?purge=true` or raise `RUNBOX_KEEP_BYTES`. |
 | `413 too_large` | Request/upload over limit; raise `RUNBOX_MAX_REQUEST_BYTES`/`RUNBOX_MAX_UPLOAD_BYTES` and the proxy body size. |
 | Timeout despite a large `timeout_seconds` | Value is clamped to `RUNBOX_MAX_TIMEOUT`; the proxy read timeout may also be too low. |
 | `409 timeout` but the command keeps running | `CAP_KILL` is missing from the container; add `cap_add: [KILL]`. |

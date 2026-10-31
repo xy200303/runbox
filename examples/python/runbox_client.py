@@ -152,11 +152,6 @@ class Runbox:
                     handle.write(chunk)
             return _filename(response.headers.get("Content-Disposition", "")) or path
 
-    def archive(self, file_id: str) -> dict:
-        quoted = urllib.parse.quote(file_id, safe="")
-        with self._request("POST", f"/v1/files/{quoted}/keep") as response:
-            return json.load(response)
-
     def list(self, path: str = "") -> list[dict]:
         suffix = f"?path={urllib.parse.quote(path)}" if path else ""
         with self._request("GET", "/v1/list" + suffix) as response:
@@ -201,8 +196,6 @@ def main() -> int:
         print(client.download(rest[0], rest[1]))
     elif command == "list":
         print(json.dumps(client.list(rest[0] if rest else ""), indent=2))
-    elif command == "archive":
-        print(json.dumps(client.archive(rest[0]), indent=2))
     else:
         print(f"unknown command: {command}", file=sys.stderr)
         return 2

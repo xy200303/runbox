@@ -88,7 +88,7 @@ class Client:
         identity: Optional[Identity] = None,
         extra: Optional[Dict[str, str]] = None,
     ) -> Dict[str, str]:
-        headers = {"Accept": "application/json", "User-Agent": "runbox-python/0.1.0"}
+        headers = {"Accept": "application/json", "User-Agent": "runbox-python/0.2.0"}
         selected = self._resolve_identity(identity)
         if selected is not None:
             headers.update(selected.headers())
@@ -181,21 +181,13 @@ class Client:
         uploaded = self._multipart("/v1/files/batch", [], list(files), identity, self.timeout)
         return list(uploaded.get("files", []))
 
-    def archive(self, file_id: str, identity: Optional[Identity] = None) -> Dict[str, Any]:
-        return self._json(
-            "POST",
-            "/v1/files/" + urllib.parse.quote(file_id, safe="") + "/keep",
-            identity=identity,
-        )
-
     def list(self, path: str = "", identity: Optional[Identity] = None) -> List[Dict[str, Any]]:
         query = {"path": path} if path else None
         data = self._json("GET", self._url_path("/v1/list", query), identity=identity)
         return list(data.get("entries", []))
 
-    def delete_workspace(self, purge: bool = False, identity: Optional[Identity] = None) -> None:
-        path = "/v1/workspace?purge=true" if purge else "/v1/workspace"
-        self._json("DELETE", path, identity=identity)
+    def delete_workspace(self, identity: Optional[Identity] = None) -> None:
+        self._json("DELETE", "/v1/workspace", identity=identity)
 
     def download_file(
         self,

@@ -16,7 +16,7 @@ deployment-wide secret, not a per-tenant credential. Anyone with it can use any
 identity and consume the runner's capacity. Put Runbox behind
 an authenticating gateway if callers are not all trusted.
 
-**Assets:** other identities' workspaces and archives, the API key, the host
+**Assets:** other identities' workspaces, the API key, the host
 and other containers.
 
 ## Trust boundaries
@@ -24,7 +24,6 @@ and other containers.
 ```
 untrusted command ── UID + workspace permissions ──► other identities' files
                   ── container namespaces/cgroups ──► host
-                  ── root-owned keep/ ──────────────► delivered files
 ```
 
 The container itself is the outer boundary. Runbox hardens the inside; it does
@@ -47,8 +46,6 @@ not replace the container runtime.
 | Bounded output | Head+tail buffer per stream | A `yes` loop cannot exhaust RAM. |
 | Output caps | Count and total bytes | Bounds response size and disk reads. |
 | Path validation | `NormalizeRel` + `secureJoin` + symlink resolution | Blocks `..`, absolute paths, drive letters and symlink escapes. |
-| Symlink-safe archive | Segment-by-segment mkdir, unlink + `O_EXCL` create | A planted `keep/evil -> /etc` cannot redirect a root-owned write. |
-| Immutable deliverables | `keep/` outside the workspace, `0640` runner-owned | The agent cannot alter a file after delivery. |
 | Constant-time key check | `subtle.ConstantTimeCompare` | Avoids trivial timing oracles. |
 | Strict identity validation | Token: 1-256 visible ASCII; scoped parts: `[A-Za-z0-9._-]{1,128}` | Sanitizing would merge distinct identities. Supplying both modes is rejected. |
 | Upload size enforcement | Limit reader, not `Content-Length` | A lying header cannot fill the disk. |

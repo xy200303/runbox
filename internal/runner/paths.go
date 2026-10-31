@@ -1,8 +1,6 @@
 package runner
 
 import (
-	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -46,40 +44,6 @@ func isWithin(base, target string) bool {
 	return relative != ".." && !strings.HasPrefix(relative, ".."+string(os.PathSeparator))
 }
 
-// secureMkdirAll creates relDir below root one segment at a time, refusing to
-// traverse a symlink. os.MkdirAll would silently follow a link planted by the
-// sandbox identity and create root-owned directories outside the store.
-func secureMkdirAll(root, relDir string) error {
-	if relDir == "" || relDir == "." {
-		return nil
-	}
-	clean, err := sandbox.NormalizeRel(relDir)
-	if err != nil {
-		return err
-	}
-	current := root
-	for _, segment := range strings.Split(clean, "/") {
-		current = filepath.Join(current, segment)
-		info, err := os.Lstat(current)
-		switch {
-		case err == nil:
-			if info.Mode()&os.ModeSymlink != 0 {
-				return fmt.Errorf("refusing to follow symlink at %s", current)
-			}
-			if !info.IsDir() {
-				return fmt.Errorf("%s is not a directory", current)
-			}
-		case os.IsNotExist(err):
-			if err := os.Mkdir(current, 0o750); err != nil {
-				return err
-			}
-		default:
-			return err
-		}
-	}
-	return nil
-}
-
 // ensureSubdir creates rel below root one segment at a time. A user-writable
 // workspace means a command can replace files/ or out/ with a symlink; mkdir
 // and chmod would then follow it as root. Replace such entries instead.
@@ -117,39 +81,4 @@ func ensureSubdir(root, rel string, mode fs.FileMode) (bool, error) {
 		// enough to stop another UID from traversing it.
 	}
 	return created, nil
-}
-
-// copyInto writes source to destination atomically enough for delivery:
-// existing entries are unlinked first and the new file is created with
-// O_EXCL, so a pre-planted symlink can never be followed.
-func copyInto(source, destination string) error {
-	if info, err := os.Lstat(destination); err == nil {
-		if info.IsDir() {
-			return fmt.Errorf("destination is a directory")
-		}
-		if err := os.Remove(destination); err != nil {
-			return err
-		}
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-	in, err := os.Open(source)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	out, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o640)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		os.Remove(destination)
-		return err
-	}
-	if err := out.Close(); err != nil {
-		os.Remove(destination)
-		return err
-	}
-	return os.Chmod(destination, 0o640)
 }

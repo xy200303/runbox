@@ -102,7 +102,7 @@ export class Client {
   private headers(identity?: Identity, extra?: Record<string, string>): Headers {
     const headers = new Headers({
       Accept: 'application/json',
-      'User-Agent': 'runbox-node/0.1.0',
+      'User-Agent': 'runbox-node/0.2.0',
     })
     for (const [key, value] of Object.entries(identityHeaders(identity ?? this.identity))) {
       headers.set(key, value)
@@ -187,18 +187,14 @@ export class Client {
     return payload.files
   }
 
-  archive(fileId: string, identity?: Identity): Promise<Record<string, unknown>> {
-    return this.json('POST', `/v1/files/${encodeURIComponent(fileId)}/keep`, undefined, identity)
-  }
-
   async list(path = '', identity?: Identity): Promise<ListEntry[]> {
     const query = path ? `?path=${encodeURIComponent(path)}` : ''
     const payload = await this.json<{ entries: ListEntry[] }>('GET', `/v1/list${query}`, undefined, identity)
     return payload.entries
   }
 
-  async deleteWorkspace(purge = false, identity?: Identity): Promise<void> {
-    await this.json('DELETE', purge ? '/v1/workspace?purge=true' : '/v1/workspace', undefined, identity)
+  async deleteWorkspace(identity?: Identity): Promise<void> {
+    await this.json('DELETE', '/v1/workspace', undefined, identity)
   }
 
   async downloadFile(

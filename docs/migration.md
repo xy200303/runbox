@@ -37,13 +37,12 @@ Runbox has exactly one API:
 | Configuration | `RUNBOX_*` environment variables only |
 | File IDs | `rbx_` prefix, versioned four fields (version, key, kind, path) |
 | Workspace | `<root>/workspaces/<key>` |
-| Archive | `<root>/keep/<key>` |
 
 The following are **rejected**, not translated:
 
 - `X-Tenant-Id`, `X-User-Id`;
 - `SANDBOX_RUNNER_ADDR`, `SANDBOX_RUNNER_KEY`, `AGENT_SANDBOX_ROOT`;
-- `sbx_` file IDs, five-field file IDs, in-workspace `keep/` paths;
+- `sbx_` file IDs, five-field file IDs, old in-workspace delivery directories;
 - old workspace data under `/workspace/users/`.
 
 If a caller wants the old behavior, run the old service next to Runbox and
@@ -108,9 +107,8 @@ Every method is context-aware:
 ```go
 reader, name, err := client.OpenFile(ctx, identity, fileID)
 reader, name, err = client.OpenPath(ctx, identity, "out/report.xlsx")
-archived, err := client.Archive(ctx, identity, fileID)
 entries, err := client.List(ctx, identity, "out")
-err = client.DeleteWorkspace(ctx, identity, false) // false keeps archived deliverables
+err = client.DeleteWorkspace(ctx, identity)
 ```
 
 The returned `*sandbox.Result` uses `exit_code`, `stdout`, `files[].file_id`
@@ -129,7 +127,7 @@ type Backend = sandbox.Backend
 then update the call sites:
 
 - `Exec` takes a `time.Duration`, not seconds;
-- `SaveFile`, `OpenFile`, `OpenPath`, `Archive`, `List` and `DeleteWorkspace`
+- `SaveFile`, `OpenFile`, `OpenPath`, `List` and `DeleteWorkspace`
   take a `context.Context`;
 - `DeleteWorkspace` and `List` are new methods;
 - errors are `*sandbox.Error`.
@@ -164,21 +162,21 @@ Runbox does not read old data:
 
 - old `sbx_` IDs are rejected, including IDs stored in the application
   database;
-- old workspaces under `/workspace/users/...` and old in-workspace `keep/`
-  directories are ignored;
+- old workspaces under `/workspace/users/...` and old delivery directories are
+  ignored;
 - new file IDs use `rbx_` and refer only to files created through Runbox.
 
 Before switching, export any old artifacts that must survive into the
 application's own file layer (object storage or `upload_file`). Treat old agent
 files as expired; the new service starts with a clean workspace. Long-term
-delivery should keep using the application's file layer, not `keep/`.
+delivery should keep using the application's file layer.
 
 ### 6. Verify the cutover
 
 - [ ] The old client is no longer built or imported.
 - [ ] `GET /health` and `GET /v1/capabilities` work with the new service.
 - [ ] Upload → `Run`/`Exec` with `inputs` → output download works.
-- [ ] `OpenPath`, `Archive`, `List` and `DeleteWorkspace` work.
+- [ ] `OpenPath`, `List` and `DeleteWorkspace` work.
 - [ ] A timeout returns `409 timeout` and the command process is gone
       (`CAP_KILL` present).
 - [ ] A second identity gets `403` when opening the first identity's file.

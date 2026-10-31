@@ -47,8 +47,8 @@ appears in the runner log.
 rbx_ + base64url(version, identity key, kind, path)
 ```
 
-`version` is `1`, `identity key` is the canonical hash, and `kind` is `files`,
-`out` or `keep`. A file ID is accepted only with the identity that owns it.
+`version` is `1`, `identity key` is the canonical hash, and `kind` is `files`
+or `out`. A file ID is accepted only with the identity that owns it.
 There is no legacy format and no cross-identity file access.
 
 ## Errors
@@ -68,7 +68,7 @@ All errors are JSON:
 | 408 | `canceled` | The client canceled the request. |
 | 409 | `busy` | The runner is at its concurrency limit. |
 | 409 | `timeout` | The command exceeded its timeout and was killed. |
-| 409 | `quota_exceeded` | Workspace or archive quota exceeded. |
+| 409 | `quota_exceeded` | Workspace quota exceeded. |
 | 409 | `uid_exhausted` | No free UID in the configured range; raise `RUNBOX_UID_MAX` or remove idle workspaces. |
 | 413 | `too_large` | Upload or request body exceeds the limit. |
 | 415 | `unsupported_media_type` | Unsupported request content type. |
@@ -81,7 +81,7 @@ No authentication. Suitable for container probes.
 ```json
 {
   "status": "healthy",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "uptime_seconds": 42
 }
 ```
@@ -114,7 +114,6 @@ and paths never become labels.
 | `runbox_exec_errors_total` (label `reason`) | counter | Failed executions by reason |
 | `runbox_upload_bytes_total` | counter | Bytes actually read from uploads |
 | `runbox_download_bytes_total` | counter | Bytes streamed to clients |
-| `runbox_archive_total` | counter | Files archived into `keep/` |
 | `runbox_workspace_deletes_total` | counter | Workspaces deleted |
 | `runbox_active_execs` | gauge | Commands currently running |
 | `runbox_uptime_seconds` | gauge | Process uptime |
@@ -124,7 +123,7 @@ and paths never become labels.
 
 ```json
 {
-  "version": "0.1.0",
+  "version": "0.2.0",
   "os": "linux",
   "arch": "amd64",
   "limits": {
@@ -137,7 +136,6 @@ and paths never become labels.
     "max_batch_files": 1000,
     "max_batch_bytes": 1073741824,
     "quota_bytes": 1073741824,
-    "keep_bytes": 1073741824,
     "retention_seconds": 604800,
     "default_timeout_seconds": 60,
     "max_timeout_seconds": 300
@@ -268,7 +266,7 @@ The request is bounded by `RUNBOX_MAX_BATCH_FILES` and
 
 ## GET /v1/files/{id}
 
-Download an uploaded (`files/`), produced (`out/`) or archived (`keep/`) file.
+Download an uploaded (`files/`) or produced (`out/`) file.
 The response is `application/octet-stream` with:
 
 ```
@@ -278,23 +276,6 @@ Content-Disposition: attachment; filename="fallback.txt"; filename*=UTF-8''%E6%8
 Clients should prefer `filename*` (RFC 5987) and fall back to `filename`.
 Range and HEAD requests are supported. Send `Range: bytes=0-1023` to receive
 `206 Partial Content`, or use `HEAD` to fetch headers without the body.
-
-## POST /v1/files/{id}/keep
-
-Copy a `files/` or `out/` entry into the immutable archive and return its new
-file ID:
-
-```json
-{"name": "report.csv", "file_id": "rbx_...", "size": 1280}
-```
-
-- The copy lives under `<root>/keep/<key>/`, outside the
-  writable workspace and owned by the runner, so later commands cannot modify
-  it.
-- Re-archiving an already archived ID is idempotent and returns the same path.
-- The archive is subject to `RUNBOX_KEEP_BYTES`; exceeding it returns
-  `409 quota_exceeded`.
-- Archiving does not delete the `out/` original.
 
 ## GET /v1/path?path=out/report.csv
 
@@ -343,11 +324,10 @@ The response is `application/x-tar` with
 `Content-Disposition: attachment; filename="runbox-files.tar"`. This is the
 batch download path for intermediate files; no file IDs are required.
 
-## DELETE /v1/workspace[?purge=true]
+## DELETE /v1/workspace
 
-Remove the caller's mutable workspace. Archived deliverables under `keep/` are
-retained by default; `purge=true` removes them as well. The workspace is
-recreated on the next call.
+Remove the caller's mutable workspace. The workspace is recreated on the next
+call.
 
 ```json
 {"deleted": true}

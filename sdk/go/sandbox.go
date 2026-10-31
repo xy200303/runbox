@@ -14,13 +14,10 @@ import (
 
 const (
 	// Version is the SDK version reported in the User-Agent header.
-	Version = "0.1.0"
+	Version = "0.2.0"
 
 	// FileIDPrefix identifies Runbox file references.
 	FileIDPrefix = "rbx_"
-
-	// KeepDir is the kind used for archived deliverables.
-	KeepDir = "keep"
 
 	// Kinds accepted in a file reference.
 	KindFiles = "files"
@@ -31,7 +28,6 @@ const (
 	DefaultMaxOutputFiles = 20
 	DefaultMaxOutputBytes = 200 << 20
 	DefaultQuotaBytes     = 1 << 30
-	DefaultKeepBytes      = 1 << 30
 	DefaultRetention      = 7 * 24 * time.Hour
 	DefaultTimeout        = 60 * time.Second
 	DefaultMaxTimeout     = 300 * time.Second
@@ -104,7 +100,6 @@ type Limits struct {
 	MaxBatchFiles    int   `json:"max_batch_files"`
 	MaxBatchBytes    int64 `json:"max_batch_bytes"`
 	QuotaBytes       int64 `json:"quota_bytes"`
-	KeepBytes        int64 `json:"keep_bytes"`
 	RetentionSeconds int64 `json:"retention_seconds"`
 	DefaultTimeout   int64 `json:"default_timeout_seconds"`
 	MaxTimeout       int64 `json:"max_timeout_seconds"`
@@ -135,7 +130,6 @@ type Backend interface {
 	OpenFile(ctx context.Context, identity Identity, fileID string) (io.ReadCloser, string, error)
 	OpenPath(ctx context.Context, identity Identity, path string) (io.ReadCloser, string, error)
 	Exec(ctx context.Context, identity Identity, command string, inputs []string, timeout time.Duration) (*Result, error)
-	Archive(ctx context.Context, identity Identity, fileID string) (Output, error)
 	List(ctx context.Context, identity Identity, path string) ([]ListEntry, error)
-	DeleteWorkspace(ctx context.Context, identity Identity, purge bool) error
+	DeleteWorkspace(ctx context.Context, identity Identity) error
 }

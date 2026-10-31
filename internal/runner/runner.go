@@ -26,7 +26,7 @@ import (
 )
 
 // Options configures a Runner. Zero values are replaced with safe defaults,
-// except quota and keep limits where zero means "unlimited".
+// except the quota where zero means unlimited.
 type Options struct {
 	Root            string
 	MaxConcurrency  int
@@ -41,7 +41,6 @@ type Options struct {
 	MaxBatchFiles   int
 	MaxBatchBytes   int64
 	QuotaBytes      int64
-	KeepBytes       int64
 	Retention       time.Duration
 	DefaultTimeout  time.Duration
 	MaxTimeout      time.Duration
@@ -58,7 +57,6 @@ type Runner struct {
 
 	root           string
 	workspacesRoot string
-	keepRoot       string
 	stateRoot      string
 	sem            chan struct{}
 	store          *store.Store
@@ -71,11 +69,8 @@ type Runner struct {
 
 // Workspace layout:
 //
-//	<root>/workspaces/<identity>/   mutable, user-owned
-//	<root>/keep/<identity>/         immutable deliverables, root-owned
-//
-// Keeping archived files outside the workspace means a command cannot chmod,
-// rename or replace them after delivery.
+//	<root>/workspaces/<identity>/   mutable, identity-owned
+//	<root>/state/runbox.db          identities and UID assignments
 func New(opts Options) (*Runner, error) {
 	if strings.TrimSpace(opts.Root) == "" {
 		opts.Root = ".runbox"
@@ -144,14 +139,13 @@ func New(opts Options) (*Runner, error) {
 		log:            logger,
 		root:           root,
 		workspacesRoot: filepath.Join(root, "workspaces"),
-		keepRoot:       filepath.Join(root, "keep"),
 		stateRoot:      filepath.Join(root, "state"),
 		sem:            make(chan struct{}, opts.MaxConcurrency),
 		uidPool:        make(chan int, opts.UIDMax-opts.UIDMin),
 		userUID:        map[string]int{},
 		locks:          map[string]*sync.Mutex{},
 	}
-	for _, dir := range []string{root, runner.workspacesRoot, runner.keepRoot, runner.stateRoot} {
+	for _, dir := range []string{root, runner.workspacesRoot, runner.stateRoot} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, fmt.Errorf("create %s: %w", dir, err)
 		}
@@ -213,7 +207,7 @@ func (r *Runner) Ready(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	for _, dir := range []string{r.root, r.workspacesRoot, r.keepRoot, r.stateRoot} {
+	for _, dir := range []string{r.root, r.workspacesRoot, r.stateRoot} {
 		info, err := os.Stat(dir)
 		if err != nil {
 			return err
@@ -256,11 +250,6 @@ func (r *Runner) key(identity sandbox.Identity) (string, *sandbox.Error) {
 func (r *Runner) workspace(identity sandbox.Identity) string {
 	key, _ := identity.CanonicalKey()
 	return filepath.Join(r.workspacesRoot, key)
-}
-
-func (r *Runner) keepDir(identity sandbox.Identity) string {
-	key, _ := identity.CanonicalKey()
-	return filepath.Join(r.keepRoot, key)
 }
 
 // ensureWorkspace creates the workspace and its conventional subdirectories,
@@ -488,8 +477,6 @@ func (r *Runner) OpenFile(ctx context.Context, identity sandbox.Identity, fileID
 	case sandbox.KindFiles, sandbox.KindOut:
 		root = r.workspace(identity)
 		relative = path.Join(ref.Kind, ref.Path)
-	case sandbox.KeepDir:
-		root = r.keepDir(identity)
 	}
 	full, err := secureJoin(root, relative)
 	if err != nil {
@@ -534,90 +521,6 @@ func (r *Runner) OpenPath(ctx context.Context, identity sandbox.Identity, relPat
 		return nil, "", sandbox.NotFound("file not found")
 	}
 	return file, filepath.Base(full), nil
-}
-
-// Archive copies a produced file into the immutable keep/ store. The
-// destination is root-owned and not writable by the sandbox identity.
-func (r *Runner) Archive(ctx context.Context, identity sandbox.Identity, fileID string) (sandbox.Output, error) {
-	if apiErr := contextErr(ctx); apiErr != nil {
-		return sandbox.Output{}, apiErr
-	}
-	key, apiErr := r.key(identity)
-	if apiErr != nil {
-		return sandbox.Output{}, apiErr
-	}
-	ref, err := sandbox.DecodeFile(fileID)
-	if err != nil {
-		return sandbox.Output{}, err
-	}
-	if ref.Key != key {
-		return sandbox.Output{}, sandbox.Forbidden("file belongs to another workspace")
-	}
-	lock := r.lockFor(key)
-	lock.Lock()
-	defer lock.Unlock()
-
-	keepRoot := r.keepDir(identity)
-	if ref.Kind == sandbox.KeepDir {
-		full, err := secureJoin(keepRoot, ref.Path)
-		if err != nil {
-			return sandbox.Output{}, err
-		}
-		info, err := os.Stat(full)
-		if err != nil || !info.Mode().IsRegular() {
-			return sandbox.Output{}, sandbox.NotFound("file not found")
-		}
-		return sandbox.Output{
-			Name:   path.Base(ref.Path),
-			FileID: sandbox.EncodeFile(key, sandbox.KeepDir, ref.Path),
-			Size:   info.Size(),
-		}, nil
-	}
-	if ref.Kind != sandbox.KindOut && ref.Kind != sandbox.KindFiles {
-		return sandbox.Output{}, sandbox.BadRequest("only files/ and out/ entries can be archived")
-	}
-
-	uid, drop, uidErr := r.execUID(identity)
-	if uidErr != nil {
-		return sandbox.Output{}, uidErr
-	}
-	workspace, err := r.ensureWorkspace(identity, uid, drop)
-	if err != nil {
-		return sandbox.Output{}, sandbox.Internal("create workspace: " + err.Error())
-	}
-	source, err := secureJoin(workspace, path.Join(ref.Kind, ref.Path))
-	if err != nil {
-		return sandbox.Output{}, err
-	}
-	info, err := os.Stat(source)
-	if err != nil || !info.Mode().IsRegular() {
-		return sandbox.Output{}, sandbox.NotFound("file not found")
-	}
-	if r.opts.KeepBytes > 0 {
-		size, err := dirSize(keepRoot)
-		if err == nil && size+info.Size() > r.opts.KeepBytes {
-			return sandbox.Output{}, sandbox.Conflict("quota_exceeded",
-				fmt.Sprintf("archived files exceed the %d byte keep limit", r.opts.KeepBytes))
-		}
-	}
-	if err := os.MkdirAll(keepRoot, 0o750); err != nil {
-		return sandbox.Output{}, sandbox.Internal("create keep directory: " + err.Error())
-	}
-	if err := secureMkdirAll(keepRoot, path.Dir(ref.Path)); err != nil {
-		return sandbox.Output{}, sandbox.BadRequest("invalid archive path")
-	}
-	destination := filepath.Join(keepRoot, filepath.FromSlash(ref.Path))
-	if !isWithin(keepRoot, destination) {
-		return sandbox.Output{}, sandbox.BadRequest("invalid archive path")
-	}
-	if err := copyInto(source, destination); err != nil {
-		return sandbox.Output{}, sandbox.Internal("archive file: " + err.Error())
-	}
-	return sandbox.Output{
-		Name:   path.Base(ref.Path),
-		FileID: sandbox.EncodeFile(key, sandbox.KeepDir, ref.Path),
-		Size:   info.Size(),
-	}, nil
 }
 
 // List returns one directory level of the workspace.
@@ -781,9 +684,8 @@ func (r *Runner) BatchFiles(ctx context.Context, identity sandbox.Identity, path
 	return files, nil
 }
 
-// DeleteWorkspace removes the mutable workspace. purge=true also drops the
-// archived deliverables.
-func (r *Runner) DeleteWorkspace(ctx context.Context, identity sandbox.Identity, purge bool) error {
+// DeleteWorkspace removes the mutable workspace.
+func (r *Runner) DeleteWorkspace(ctx context.Context, identity sandbox.Identity) error {
 	if apiErr := contextErr(ctx); apiErr != nil {
 		return apiErr
 	}
@@ -797,12 +699,7 @@ func (r *Runner) DeleteWorkspace(ctx context.Context, identity sandbox.Identity,
 	if err := os.RemoveAll(r.workspace(identity)); err != nil {
 		return sandbox.Internal("remove workspace: " + err.Error())
 	}
-	if purge {
-		if err := os.RemoveAll(r.keepDir(identity)); err != nil {
-			return sandbox.Internal("remove archived files: " + err.Error())
-		}
-	}
-	r.log.Info("workspace deleted", "key", key, "mode", identity.Mode(), "namespace", identity.Namespace, "principal", identity.Principal, "purge", purge)
+	r.log.Info("workspace deleted", "key", key, "mode", identity.Mode(), "namespace", identity.Namespace, "principal", identity.Principal)
 	return nil
 }
 

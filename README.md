@@ -17,7 +17,7 @@
 
 <p align="center">
   <a href="https://github.com/xy200303/runbox/actions/workflows/ci.yml"><img src="https://github.com/xy200303/runbox/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
-  <img src="https://img.shields.io/badge/version-0.1.0-2563EB?style=for-the-badge" alt="Version 0.1.0">
+  <img src="https://img.shields.io/badge/version-0.2.0-2563EB?style=for-the-badge" alt="Version 0.2.0">
   <img src="https://img.shields.io/badge/Go-1.23-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go 1.23">
   <img src="https://img.shields.io/badge/license-MIT-16A34A?style=for-the-badge" alt="MIT license">
   <img src="https://img.shields.io/badge/docker-ready-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker ready">
@@ -31,7 +31,7 @@
 
 ---
 
-**Runbox** is a lightweight agent sandbox built for a single server. It gives each caller a persistent Linux workspace: upload inputs, run Python, Node or shell commands, and collect the results. Identities share one long-running container, but keep separate UIDs, private workspaces, quotas and an immutable archive.
+**Runbox** is a lightweight agent sandbox built for a single server. It gives each caller a persistent Linux workspace: upload inputs, run Python, Node or shell commands, and collect the results. Identities share one long-running container, but keep separate UIDs, private workspaces, quotas and path-safe file access.
 
 It is small on purpose: one Go binary, one container, one volume, and a single HTTP API. No scheduler, no control plane, no external database. The name is literal: **run in a box**.
 
@@ -75,11 +75,11 @@ Choose Runbox when you want one container next to your application, semi-trusted
 |---|---|
 | **Single-machine first** | Designed for one server: no scheduler, no control plane, no external database. SQLite and the workspaces live on the same volume. |
 | **One container, many identities** | The HTTP runner and the execution environment share one long-lived container. Each identity runs under its own UID; calls for one identity are serialized, different identities run concurrently. |
-| **Per-identity file isolation** | A private workspace, a workspace quota and an immutable archive outside the writable tree. Symlinks cannot be used to read or exfiltrate runner-owned files. |
+| **Per-identity file isolation** | A private workspace, a workspace quota and symlink-safe path resolution. Files are downloaded by relative path or file ID; persistence is the caller's job. |
 | **Persistent workspaces** | Installed packages and intermediate files survive across calls. `HOME`, XDG directories and pip/npm prefixes all point inside the workspace and count toward the quota. |
-| **Immutable deliverables** | Files produced under `out/` are returned as opaque file IDs. Archiving copies them into `keep/`, outside the writable tree, so later commands cannot alter a delivered file. |
-| **Bounded everything** | Upload size, command length, input count, captured stdout (head + tail), output count and size, workspace quota, archive quota, timeout, concurrency and retention. |
-| **Files are first-class** | Upload, execute with inputs, list, download by opaque ID or workspace path, archive, delete. Attachments stream as multipart; plain calls use JSON. |
+| **Caller-managed persistence** | Files produced under `out/` are returned as file IDs and also downloadable by path. Runbox does not keep a second long-term copy; download what you need and store it yourself. |
+| **Bounded everything** | Upload size, command length, input count, captured stdout (head + tail), output count and size, workspace quota, timeout, concurrency and retention. |
+| **Files are first-class** | Upload, execute with inputs, list, download by opaque ID or workspace path, delete. Attachments stream as multipart; plain calls use JSON. |
 | **Large files** | Uploads stream to disk without buffering the whole body in memory; downloads support `Range` and `HEAD`. |
 | **Batch and paths** | Upload several files at once; download any workspace file by relative path, or stream a directory as a tar archive. Intermediate files need no file ID. |
 | **Fail-closed hardening** | Read-only root filesystem, dropped capabilities, `no-new-privileges`, tini as PID 1. Startup refuses to run as root without the capabilities it needs. |
@@ -140,7 +140,7 @@ curl -fsS http://localhost:8099/v1/exec \
   -d '{"command":"mkdir -p out && echo hello > out/report.txt"}'
 ```
 
-The response contains a `file_id` for `out/report.txt`. Download it with `GET /v1/files/{id}`, or archive an immutable copy with `POST /v1/files/{id}/keep`.
+The response contains a `file_id` for `out/report.txt`. Download it with `GET /v1/files/{id}`, or by path with `GET /v1/path?path=out/report.txt`.
 
 ### 4. Or run from source
 
@@ -247,7 +247,7 @@ await client.downloadArchive(['out'], 'artifacts.tar')
 ```
 
 Source: [`sdk/python`](sdk/python) and [`sdk/node`](sdk/node). A full curl
-walkthrough — upload, exec, list, download, archive — is in
+walkthrough — upload, exec, list, download — is in
 [`examples/curl.sh`](examples/curl.sh).
 
 ## Identity model
@@ -282,11 +282,10 @@ Authentication is `Authorization: Bearer <RUNBOX_API_KEY>`. `/health` and `/read
 | POST | `/v1/files` | Upload one file |
 | POST | `/v1/files/batch` | Upload several files in one request |
 | GET | `/v1/files/{id}` | Download a file by ID |
-| POST | `/v1/files/{id}/keep` | Archive a file immutably |
 | GET | `/v1/path?path=out/x` | Download by workspace path |
 | GET | `/v1/list?path=out` | List a workspace directory |
 | GET | `/v1/archive?path=out&path=tmp` | Download files or directories as a tar archive |
-| DELETE | `/v1/workspace[?purge=true]` | Remove the workspace (and optionally the archive) |
+| DELETE | `/v1/workspace` | Remove the workspace |
 
 Full request and response reference: [docs/api.md](docs/api.md).
 
@@ -297,7 +296,6 @@ flowchart LR
     A["Agent or application"] -->|"HTTP · Bearer · X-Runbox-*"| B["runboxd"]
     B -->|"fork/exec"| C["/bin/sh -c command · UID 20000+n"]
     B --> D[("workspaces/identity-key · mutable")]
-    B --> E[("keep/identity-key · immutable")]
 ```
 
 ```text
@@ -308,7 +306,6 @@ RUNBOX_ROOT/
 │   ├── .local/  .npm-global/        persistent pip / npm installs
 │   ├── .cache/  .config/  .tmp/     persistent XDG state and temp files
 │   └── ...
-├── keep/<identity-key>/             immutable deliverables, runner-owned
 └── state/
     ├── runbox.db                    identities, UIDs and metadata (SQLite)
     ├── runbox.db-wal                WAL journal while the runner is active
@@ -317,8 +314,8 @@ RUNBOX_ROOT/
 
 - The command runs in its own process group as the identity's UID. A timeout kills the group, not the container.
 - Output is captured with a bounded head + tail buffer, so a command printing gigabytes cannot exhaust RAM.
-- Files created under `out/` during the call are returned as file IDs that point into the workspace. `POST /v1/files/{id}/keep` copies one into `keep/`, outside the writable workspace, so later commands cannot change it. `?purge=true` removes the archive with the workspace.
-- A janitor removes workspaces idle longer than the retention window; `keep/` is untouched.
+- Files created under `out/` during the call are returned as file IDs that point into the workspace. Download them with the file ID or by relative path; Runbox keeps no second copy.
+- A janitor removes workspaces idle longer than the retention window.
 - The API key is compared in constant time; identity values are validated, not sanitized — sanitizing would merge distinct identities onto one workspace.
 
 More detail: [docs/architecture.md](docs/architecture.md).
@@ -336,7 +333,7 @@ More detail: [docs/architecture.md](docs/architecture.md).
 ## Operations
 
 - `/ready` verifies that the data directories exist and the state directory is writable.
-- `/metrics` exposes bounded Prometheus counters: requests, execs, timeouts, busy, upload/download bytes, archives, workspace deletes, active commands and uptime.
+- `/metrics` exposes bounded Prometheus counters: requests, execs, timeouts, busy, upload/download bytes, workspace deletes, active commands and uptime.
 - Graceful shutdown cancels in-flight commands after the configured budget and kills their process groups.
 - Logs are structured text or JSON (`RUNBOX_LOG_FORMAT`).
 
@@ -365,7 +362,6 @@ Durations accept `30s`, `15m`, `7d` or bare seconds; sizes accept `20MiB`, `20MB
 | `RUNBOX_MAX_BATCH_FILES` | `1000` | Files per batch upload or tar archive. |
 | `RUNBOX_MAX_BATCH_BYTES` | `1GiB` | Total size of one tar archive download. |
 | `RUNBOX_QUOTA_BYTES` | `1GiB` | Per-workspace quota; execution is refused above it. `0` = unlimited. |
-| `RUNBOX_KEEP_BYTES` | `1GiB` | Per-identity archive quota. `0` = unlimited. |
 | `RUNBOX_RETENTION` | `7d` | Idle workspace retention. |
 | `RUNBOX_SWEEP_INTERVAL` | `1h` | Janitor interval. |
 | `RUNBOX_UID_MIN` / `RUNBOX_UID_MAX` | `20000` / `20100` | UID pool used for Linux isolation. |
@@ -398,7 +394,7 @@ Build arguments for restricted networks: `GOPROXY`, `APT_MIRROR`, `PIP_INDEX`, `
 | New container/VM per user | no | yes | yes |
 | Single-machine footprint | one binary, one container, one volume | control plane + many containers | KVM + runtime + VM images |
 | Startup per identity | no container/VM boot | container start or pool checkout | VM boot or snapshot restore |
-| File isolation | built-in: workspace, quota, immutable archive, symlink-safe | volume or API per sandbox | strong |
+| File isolation | built-in: workspace, quota, symlink-safe paths | volume or API per sandbox | strong |
 | Best fit | internal/semi-trusted, single machine | multi-node, stronger per-sandbox isolation | hostile tenants |
 
 OpenSandbox and CubeSandbox are control-plane projects and support different deployment modes; the column describes the common container-per-sandbox model, not a claim about every mode. See [docs/comparison.md](docs/comparison.md) for gVisor, Dify and the full trade-off list.
@@ -424,7 +420,7 @@ Not as a hard multi-tenant boundary. Runbox uses the container's namespaces and 
 <details>
 <summary><strong>How is it different from Dify's sandbox?</strong></summary>
 
-Dify's sandbox is part of the Dify stack and scopes files per task. Runbox is standalone, exposes a stable HTTP contract, and adds per-identity workspaces, quotas, an immutable archive and symlink-safe paths.
+Dify's sandbox is part of the Dify stack and scopes files per task. Runbox is standalone, exposes a stable HTTP contract, and adds per-identity workspaces, quotas and symlink-safe paths.
 
 </details>
 
@@ -441,7 +437,7 @@ For development, yes. Production isolation is Linux-only, because per-identity U
 - [ ] Shared storage or per-identity routing for multi-replica deployments
 - [ ] Optional hard disk quotas per identity
 - [ ] A maintained seccomp profile and a gVisor deployment recipe
-- [ ] Tenant admin API: namespace-level usage, quota and purge
+- [ ] Tenant admin API: namespace-level usage and quota
 - [ ] Signed container images, SBOMs and provenance attestations
 
 ## Contributing

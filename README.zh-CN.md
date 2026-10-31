@@ -17,7 +17,7 @@
 
 <p align="center">
   <a href="https://github.com/xy200303/runbox/actions/workflows/ci.yml"><img src="https://github.com/xy200303/runbox/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI 状态"></a>
-  <img src="https://img.shields.io/badge/version-0.1.0-2563EB?style=for-the-badge" alt="版本 0.1.0">
+  <img src="https://img.shields.io/badge/version-0.2.0-2563EB?style=for-the-badge" alt="版本 0.2.0">
   <img src="https://img.shields.io/badge/Go-1.23-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go 1.23">
   <img src="https://img.shields.io/badge/license-MIT-16A34A?style=for-the-badge" alt="MIT 许可证">
   <img src="https://img.shields.io/badge/docker-ready-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker">
@@ -31,7 +31,7 @@
 
 ---
 
-**Runbox** 是专为单机服务器打造的轻量 Agent 沙箱。它为每个调用方提供可持久化的 Linux 工作区：上传输入、执行 Python / Node / Shell、取回结果。多个身份共享一个长期运行的容器，同时各自拥有独立 UID、私有工作区、配额和不可变归档。
+**Runbox** 是专为单机服务器打造的轻量 Agent 沙箱。它为每个调用方提供可持久化的 Linux 工作区：上传输入、执行 Python / Node / Shell、取回结果。多个身份共享一个长期运行的容器，同时各自拥有独立 UID、私有工作区、配额和路径安全的文件访问。
 
 部署保持简单：一台服务器、一个 Go 二进制、一个容器、一个卷，对外只有一套 HTTP 接口。不需要调度器、控制面或外部数据库。名字就是字面意思：**run in a box**。
 
@@ -75,11 +75,11 @@ Runbox 采用 **dify-sandbox 的形态**：一个长期运行的容器，承载�
 |---|---|
 | **单机优先** | 为单台服务器设计：不需要调度器、控制面或外部数据库。SQLite 和工作区都在同一个数据卷里。 |
 | **单容器、多身份** | HTTP runner 与执行环境共处一个长期运行的容器。每个身份用自己的 UID；同一身份的调用串行，不同身份可并发。 |
-| **按身份隔离文件** | 私有工作区、工作区配额、可写目录之外的不可变归档。符号链接无法用来读取或带出 runner 拥有的文件。 |
+| **按身份隔离文件** | 私有工作区、工作区配额、符号链接安全的路径解析。文件按相对路径或 file ID 下载，持久化由调用方负责。 |
 | **工作区可持久化** | 安装过的包和中间文件跨调用保留。`HOME`、XDG 目录、pip/npm 前缀都在工作区内，并计入配额。 |
-| **交付文件不可篡改** | 执行期间写入 `out/` 的文件以不透明 file ID 返回。归档会复制进可写目录之外的 `keep/`，后续命令改不了已交付文件。 |
-| **所有资源都有边界** | 上传大小、命令长度、输入数量、stdout（保留首尾）、产物数量与大小、工作区配额、归档配额、超时、并发和保留期。 |
-| **文件是一等公民** | 上传、带输入执行、列目录、按不透明 ID 或工作区路径下载、归档、删除。带附件走流式 multipart，普通调用走 JSON。 |
+| **持久化由调用方负责** | 执行期间写入 `out/` 的文件以 file ID 返回，也可以按路径下载。Runbox 不保留第二份长期副本；需要就下载后自行存储。 |
+| **所有资源都有边界** | 上传大小、命令长度、输入数量、stdout（保留首尾）、产物数量与大小、工作区配额、超时、并发和保留期。 |
+| **文件是一等公民** | 上传、带输入执行、列目录、按不透明 ID 或工作区路径下载、删除。带附件走流式 multipart，普通调用走 JSON。 |
 | **大文件** | 上传边读边落盘，不把整个请求体读进内存；下载支持 `Range` 和 `HEAD`。 |
 | **批量与路径** | 一次上传多个文件；按相对路径下载任意中间文件，或把目录打成 tar 一次取回。中间文件不需要 file ID。 |
 | **默认 fail-closed** | 只读根文件系统、丢弃能力、`no-new-privileges`、tini 作为 PID 1。以 root 启动却缺少所需能力时拒绝启动。 |
@@ -140,7 +140,7 @@ curl -fsS http://localhost:8099/v1/exec \
   -d '{"command":"mkdir -p out && echo hello > out/report.txt"}'
 ```
 
-响应里会返回 `out/report.txt` 的 `file_id`。用 `GET /v1/files/{id}` 下载，或用 `POST /v1/files/{id}/keep` 归档一份不可变副本。
+响应里会返回 `out/report.txt` 的 `file_id`。用 `GET /v1/files/{id}` 下载，或用 `GET /v1/path?path=out/report.txt` 按路径下载。
 
 ### 4. 或从源码运行
 
@@ -246,7 +246,7 @@ const result = await client.exec('echo hello')
 await client.downloadArchive(['out'], 'artifacts.tar')
 ```
 
-源码：[`sdk/python`](sdk/python)、[`sdk/node`](sdk/node)。完整 curl 走查（上传、执行、列目录、下载、归档）见 [`examples/curl.sh`](examples/curl.sh)。
+源码：[`sdk/python`](sdk/python)、[`sdk/node`](sdk/node)。完整 curl 走查（上传、执行、列目录、下载）见 [`examples/curl.sh`](examples/curl.sh)。
 
 ## 身份模型
 
@@ -280,11 +280,10 @@ await client.downloadArchive(['out'], 'artifacts.tar')
 | POST | `/v1/files` | 上传单个文件 |
 | POST | `/v1/files/batch` | 一次上传多个文件 |
 | GET | `/v1/files/{id}` | 按 ID 下载 |
-| POST | `/v1/files/{id}/keep` | 归档为长期文件 |
 | GET | `/v1/path?path=out/x` | 按工作区路径下载 |
 | GET | `/v1/list?path=out` | 列工作区目录 |
 | GET | `/v1/archive?path=out&path=tmp` | 按 tar 归档批量下载文件或目录 |
-| DELETE | `/v1/workspace[?purge=true]` | 删除工作区（可选连归档一起删） |
+| DELETE | `/v1/workspace` | 删除工作区 |
 
 完整请求/响应说明见 [docs/api.md](docs/api.md)。
 
@@ -295,7 +294,6 @@ flowchart LR
     A["Agent 或应用"] -->|"HTTP · Bearer · X-Runbox-*"| B["runboxd"]
     B -->|"fork/exec"| C["/bin/sh -c 命令 · UID 20000+n"]
     B --> D[("workspaces/identity-key · 可写")]
-    B --> E[("keep/identity-key · 不可变")]
 ```
 
 ```text
@@ -306,7 +304,6 @@ RUNBOX_ROOT/
 │   ├── .local/  .npm-global/        持久的 pip / npm 安装
 │   ├── .cache/  .config/  .tmp/     持久的 XDG 状态与临时文件
 │   └── ...
-├── keep/<identity-key>/             不可变交付，属主为 runner
 └── state/
     ├── runbox.db                    身份、UID 和元数据（SQLite）
     ├── runbox.db-wal                runner 运行期间的 WAL 日志
@@ -315,8 +312,8 @@ RUNBOX_ROOT/
 
 - 命令在独立进程组、以该身份的 UID 执行；超时只杀进程组，不动容器。
 - stdout 使用首尾有界缓冲，命令打印几个 GB 也不会撑爆内存。
-- 执行期间写入 `out/` 的文件以 file ID 返回，ID 指向工作区。调用 `POST /v1/files/{id}/keep` 会把文件复制进可写工作区之外的 `keep/`，后续命令改不了；`?purge=true` 会连归档一起删除。
-- 后台清理任务删除超过保留期未活动的工作区；`keep/` 不受影响。
+- 执行期间写入 `out/` 的文件以 file ID 返回，ID 指向工作区。按 file ID 或相对路径下载；Runbox 不保留第二份副本。
+- 后台清理任务删除超过保留期未活动的工作区。
 - API Key 常量时间比较；身份只校验、不“净化”——净化会把不同身份映射到同一个工作区。
 
 更多细节：[docs/architecture.md](docs/architecture.md)。
@@ -334,7 +331,7 @@ RUNBOX_ROOT/
 ## 运维
 
 - `/ready` 检查数据目录存在、state 目录可写。
-- `/metrics` 暴露有界的 Prometheus 计数器：请求、执行、超时、繁忙、上传/下载字节数、归档、工作区删除、活跃命令和运行时长。
+- `/metrics` 暴露有界的 Prometheus 计数器：请求、执行、超时、繁忙、上传/下载字节数、工作区删除、活跃命令和运行时长。
 - 优雅退出会在预算内取消在途命令，并杀掉对应进程组。
 - 日志支持文本或 JSON（`RUNBOX_LOG_FORMAT`）。
 
@@ -363,7 +360,6 @@ RUNBOX_ROOT/
 | `RUNBOX_MAX_BATCH_FILES` | `1000` | 单次批量上传或 tar 归档的文件数上限。 |
 | `RUNBOX_MAX_BATCH_BYTES` | `1GiB` | 单次 tar 归档下载的总大小上限。 |
 | `RUNBOX_QUOTA_BYTES` | `1GiB` | 单工作区配额；超出后拒绝执行。`0` 表示不限。 |
-| `RUNBOX_KEEP_BYTES` | `1GiB` | 单身份归档配额。`0` 表示不限。 |
 | `RUNBOX_RETENTION` | `7d` | 工作区闲置保留期。 |
 | `RUNBOX_SWEEP_INTERVAL` | `1h` | 清理任务间隔。 |
 | `RUNBOX_UID_MIN` / `RUNBOX_UID_MAX` | `20000` / `20100` | Linux 隔离使用的 UID 池。 |
@@ -396,7 +392,7 @@ RUNBOX_ROOT/
 | 每个用户新建容器/VM | 否 | 是 | 是 |
 | 单机部署占用 | 一个二进制、一个容器、一个卷 | 控制面 + 多个容器 | KVM + 运行时 + VM 镜像 |
 | 每个身份的启动成本 | 无容器/VM 启动 | 容器启动或池中取出 | VM 启动或快照恢复 |
-| 文件隔离 | 内置：工作区、配额、不可变归档、符号链接防护 | 依赖卷或 API | 强 |
+| 文件隔离 | 内置：工作区、配额、符号链接防护 | 依赖卷或 API | 强 |
 | 适合 | 内部/半可信、单机 | 多机、更强的单沙箱隔离 | 敌对租户 |
 
 OpenSandbox、CubeSandbox 是带控制面的项目，支持不同部署形态；这一列描述的是常见的 container-per-sandbox 模式，不代表其所有模式。gVisor、Dify 的完整对比见 [docs/comparison.md](docs/comparison.md)。
@@ -422,7 +418,7 @@ OpenSandbox、CubeSandbox 是带控制面的项目，支持不同部署形态；
 <details>
 <summary><strong>和 Dify 的 sandbox 有什么区别？</strong></summary>
 
-Dify 的 sandbox 是 Dify 技术栈的一部分，按任务隔离文件。Runbox 是独立服务，提供稳定的 HTTP 契约，并增加了按身份的工作区、配额、不可变归档和符号链接安全解析。
+Dify 的 sandbox 是 Dify 技术栈的一部分，按任务隔离文件。Runbox 是独立服务，提供稳定的 HTTP 契约，并增加了按身份的工作区、配额和符号链接安全解析。
 
 </details>
 

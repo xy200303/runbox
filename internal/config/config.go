@@ -30,7 +30,6 @@ type Config struct {
 	MaxBatchFiles            int
 	MaxBatchBytes            int64
 	QuotaBytes               int64
-	KeepBytes                int64
 	Retention                time.Duration
 	SweepInterval            time.Duration
 	MaxConcurrency           int
@@ -65,7 +64,6 @@ func FromEnv(get func(string) string) (Config, error) {
 		MaxBatchFiles:   1000,
 		MaxBatchBytes:   1 << 30,
 		QuotaBytes:      sandbox.DefaultQuotaBytes,
-		KeepBytes:       sandbox.DefaultKeepBytes,
 		Retention:       sandbox.DefaultRetention,
 		SweepInterval:   time.Hour,
 		MaxConcurrency:  2,
@@ -138,11 +136,6 @@ func FromEnv(get func(string) string) (Config, error) {
 	if value := get("RUNBOX_QUOTA_BYTES"); value != "" {
 		if cfg.QuotaBytes, err = ParseBytes(value); err != nil {
 			return Config{}, fmt.Errorf("RUNBOX_QUOTA_BYTES: %w", err)
-		}
-	}
-	if value := get("RUNBOX_KEEP_BYTES"); value != "" {
-		if cfg.KeepBytes, err = ParseBytes(value); err != nil {
-			return Config{}, fmt.Errorf("RUNBOX_KEEP_BYTES: %w", err)
 		}
 	}
 	if value := get("RUNBOX_RETENTION"); value != "" {
@@ -235,7 +228,7 @@ func (c Config) Validate() error {
 	if c.MaxStdoutBytes < 1024 {
 		return fmt.Errorf("RUNBOX_MAX_STDOUT_BYTES must be at least 1024")
 	}
-	if c.MaxOutputFiles < 0 || c.MaxOutputBytes < 0 || c.QuotaBytes < 0 || c.KeepBytes < 0 {
+	if c.MaxOutputFiles < 0 || c.MaxOutputBytes < 0 || c.QuotaBytes < 0 {
 		return fmt.Errorf("limits must not be negative")
 	}
 	if c.MaxBatchFiles <= 0 || c.MaxBatchBytes <= 0 {
@@ -271,7 +264,6 @@ func (c Config) Limits() sandbox.Limits {
 		MaxBatchFiles:    c.MaxBatchFiles,
 		MaxBatchBytes:    c.MaxBatchBytes,
 		QuotaBytes:       c.QuotaBytes,
-		KeepBytes:        c.KeepBytes,
 		RetentionSeconds: int64(c.Retention / time.Second),
 		DefaultTimeout:   int64(c.DefaultTimeout / time.Second),
 		MaxTimeout:       int64(c.MaxTimeout / time.Second),

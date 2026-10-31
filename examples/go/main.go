@@ -56,12 +56,6 @@ func main() {
 			log.Fatal(err)
 		}
 		fmt.Printf("downloaded %s as %s (%d bytes)\n", name, destination, written)
-
-		archived, err := client.Archive(ctx, sandbox.Identity{}, output.FileID)
-		if err != nil {
-			log.Fatal(err)
-		}
-		fmt.Printf("archived for long-term download: %s (%d bytes)\n", archived.FileID, archived.Size)
 	}
 }
 

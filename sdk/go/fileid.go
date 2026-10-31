@@ -50,7 +50,7 @@ func DecodeFile(fileID string) (*FileRef, error) {
 
 func validKind(kind string) bool {
 	switch kind {
-	case KindFiles, KindOut, KeepDir:
+	case KindFiles, KindOut:
 		return true
 	default:
 		return false

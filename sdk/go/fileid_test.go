@@ -33,7 +33,7 @@ func TestEncodeDecodeFile(t *testing.T) {
 
 func TestDecodeRejectsFiveFieldFileID(t *testing.T) {
 	key := mustKey(t, TokenIdentity("ns.user"))
-	raw := strings.Join([]string{"1", key, KeepDir, "report.txt", "extra"}, "\x00")
+	raw := strings.Join([]string{"1", key, KindOut, "report.txt", "extra"}, "\x00")
 	id := FileIDPrefix + base64.RawURLEncoding.EncodeToString([]byte(raw))
 	if _, err := DecodeFile(id); err == nil {
 		t.Fatal("five-field file ids must be rejected")

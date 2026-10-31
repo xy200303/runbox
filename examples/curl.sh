@@ -37,9 +37,6 @@ echo "== download ${file_id}"
 curl -fsS "${auth[@]}" -o hello.txt "${RUNBOX_URL}/v1/files/${file_id}"
 cat hello.txt
 
-echo "== archive"
-curl -fsS "${auth[@]}" -X POST "${RUNBOX_URL}/v1/files/${file_id}/keep"
-echo
 echo "== list out/"
 curl -fsS "${auth[@]}" "${RUNBOX_URL}/v1/list?path=out"
 echo

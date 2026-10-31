@@ -62,7 +62,6 @@ func main() {
 		MaxOutputFiles:           cfg.MaxOutputFiles,
 		MaxOutputBytes:           cfg.MaxOutputBytes,
 		QuotaBytes:               cfg.QuotaBytes,
-		KeepBytes:                cfg.KeepBytes,
 		Retention:                cfg.Retention,
 		DefaultTimeout:           cfg.DefaultTimeout,
 		MaxTimeout:               cfg.MaxTimeout,

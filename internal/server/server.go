@@ -69,7 +69,6 @@ func New(cfg config.Config, r *runner.Runner, logger *slog.Logger) *Server {
 	engine.POST("/v1/files/batch", s.requireAuth(), s.handleUploadBatch)
 	engine.GET("/v1/files/:id", s.requireAuth(), s.handleFile)
 	engine.HEAD("/v1/files/:id", s.requireAuth(), s.handleFile)
-	engine.POST("/v1/files/:id/keep", s.requireAuth(), s.handleKeep)
 	engine.GET("/v1/path", s.requireAuth(), s.handlePath)
 	engine.HEAD("/v1/path", s.requireAuth(), s.handlePath)
 	engine.GET("/v1/list", s.requireAuth(), s.handleList)

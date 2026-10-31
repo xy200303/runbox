@@ -14,12 +14,12 @@ thing to schedule.
 
 Runbox chooses the dify-sandbox shape: one long-lived container, many
 identities. A stable UID and a private workspace provide the isolation; the
-workspace is `0750` and owned by that UID, and `keep/` lives outside the
-writable tree. No container or VM is created per user. The trade-off is a shared
+workspace is `0750` and owned by that UID. No container or VM is created per user. The trade-off is a shared
 kernel; use gVisor or one container per trust domain when that matters.
 
 Runbox adds the file isolation layer to that shape: per-identity workspace and
-quota, immutable archive, symlink-safe path resolution and bounded output. This
+quota, symlink-safe path resolution and bounded output. Persistence is left to
+the caller. This
 is the difference from a plain per-task UID sandbox.
 
 ## What matters for an agent sandbox
@@ -64,9 +64,9 @@ Choose it when:
 - the workload is Python/Node/shell, spreadsheets, PDFs and data files;
 - you need an execution and file backend for an agent, not an agent runtime or
   model host;
-- you need per-identity file isolation: private workspace, quota, immutable
-  archive, symlink-safe paths;
-- you want to read and modify the whole implementation (about 3k lines of Go).
+- you need per-identity file isolation: private workspace, quota, symlink-safe
+  paths, with persistence handled by the caller;
+- you want to read and modify the whole implementation (a small Go codebase).
 
 Avoid it when:
 
@@ -108,8 +108,8 @@ upstream documentation: these projects support more than one deployment mode.
 
 If you already run Dify, its code node sandbox is convenient and follows a
 similar model (one container, per-task UID, HTTP). Runbox borrows that shape and
-adds a per-identity file isolation layer: workspace, quota, immutable `keep/`
-outside the writable tree, symlink-safe path resolution and bounded output.
+adds a per-identity file isolation layer: workspace, quota, symlink-safe path
+resolution and bounded output.
 Dify's sandbox remains the right choice when you are already inside its
 workflow; Runbox is standalone and usable from any application.
 

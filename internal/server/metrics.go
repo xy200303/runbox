@@ -25,7 +25,6 @@ type metrics struct {
 
 	uploadBytes      atomic.Int64
 	downloadBytes    atomic.Int64
-	archiveTotal     atomic.Int64
 	workspaceDeletes atomic.Int64
 
 	activeExecs atomic.Int64
@@ -82,9 +81,6 @@ func (m *metrics) write(w http.ResponseWriter, version string, uptime time.Durat
 	fmt.Fprintf(w, "# TYPE runbox_download_bytes_total counter\n")
 	fmt.Fprintf(w, "runbox_download_bytes_total %d\n", m.downloadBytes.Load())
 
-	fmt.Fprintf(w, "# HELP runbox_archive_total Files archived.\n")
-	fmt.Fprintf(w, "# TYPE runbox_archive_total counter\n")
-	fmt.Fprintf(w, "runbox_archive_total %d\n", m.archiveTotal.Load())
 	fmt.Fprintf(w, "# HELP runbox_workspace_deletes_total Workspaces deleted.\n")
 	fmt.Fprintf(w, "# TYPE runbox_workspace_deletes_total counter\n")
 	fmt.Fprintf(w, "runbox_workspace_deletes_total %d\n", m.workspaceDeletes.Load())

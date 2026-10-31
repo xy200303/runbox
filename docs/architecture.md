@@ -13,7 +13,6 @@
 - Strong isolation between hostile tenants. That requires a stronger boundary
   (gVisor, microVM) or one container per tenant.
 - Distributed scheduling. One runner owns its local workspaces.
-- Long-term storage. `keep/` is a convenient archive, not a backup system.
 - Hosting the agent or running the model loop. Runbox executes the commands and
   stores the files the agent asks for; the agent itself runs elsewhere.
 
@@ -26,8 +25,8 @@ stable UID and a private workspace provide the boundary, and one process serves
 many identities.
 
 This is the dify-sandbox shape. Runbox adds a file-isolation layer on top:
-per-identity workspace and quota, an immutable archive outside the writable
-tree, symlink-safe path resolution and bounded output.
+per-identity workspace and quota, symlink-safe path resolution and bounded
+output. Persistence is the caller's responsibility.
 
 The choice optimizes single-machine deployment and resource use, not
 hostile-tenant isolation. The shared kernel is the trade-off; gVisor or one
@@ -52,7 +51,7 @@ contract.
 |---|---|
 | `sdk/go/` | Public Go SDK: wire types, file-id codec, validation, HTTP client. No `internal/` imports. |
 | `internal/config/` | Environment parsing and validation. |
-| `internal/runner/` | Workspaces, UID allocation, execution, output collection, archive, janitor. |
+| `internal/runner/` | Workspaces, UID allocation, execution, output collection, janitor. |
 | `internal/store/` | SQLite identities, UID assignments and metadata (GORM). |
 | `internal/server/` | Gin routing, auth, identity, body limits, streaming. |
 | `cmd/runboxd/` | Wiring, logging, signals, graceful shutdown. |
@@ -75,9 +74,6 @@ keeps it satisfying `sandbox.Backend`. The SDK does not depend on the server.
 │       ├── .local/                     pip --user, XDG data
 │       ├── .npm-global/                npm global prefix
 │       └── .npm-cache/
-├── keep/
-│   └── <key>/                          0750, owned by the runner (root)
-│       └── <same relative path as out/file>
 └── state/
     ├── runbox.db                     SQLite: identities, UIDs, metadata
     ├── runbox.db-wal                 WAL journal while the runner is active
@@ -85,10 +81,6 @@ keeps it satisfying `sandbox.Backend`. The SDK does not depend on the server.
 ```
 
 `<root>` is `/workspace` in the image and `.runbox` by default.
-
-Why `keep/` is outside the workspace: a user-owned directory can be renamed,
-removed or replaced with a symlink by the command itself. Delivered files must
-survive the agent, so they live in a runner-owned tree with mode `0640`.
 
 ## Identity and UID model
 
@@ -123,8 +115,8 @@ survive the agent, so they live in a runner-owned tree with mode `0640`.
 Two independent mechanisms:
 
 1. **Per-identity mutex.** Serializes all calls for one identity (`SaveFile`,
-   `Exec`, `Archive`, `DeleteWorkspace`). This prevents concurrent `chown`,
-   workspace deletion and archive races.
+   `Exec`, `DeleteWorkspace`). This prevents concurrent `chown`, upload and
+   workspace deletion races.
 2. **Global semaphore.** At most `RUNBOX_MAX_CONCURRENCY` commands at once.
    Acquisition is non-blocking; when full, the request returns `409 busy`
    immediately. A bounded queue was rejected on purpose: queued requests hide
@@ -177,10 +169,6 @@ That second check is the important one: a command can create
 `out/link -> /etc/shadow`, and the runner runs as root. Reading through the
 link would leak a file the identity cannot read by itself.
 
-`secureMkdirAll` creates archive directories one segment at a time and refuses
-to traverse a symlink. `copyInto` unlinks an existing destination, then creates
-the file with `O_EXCL`, so a planted symlink is never followed.
-
 ## Output collection
 
 - Recursively walks `out/`.
@@ -192,25 +180,13 @@ the file with `O_EXCL`, so a planted symlink is never followed.
 
 Ordering is deterministic (sorted by name).
 
-## Archive
-
-`Archive` copies a `files/` or `out/` entry into `keep/` preserving the
-relative path. The destination is created under the runner's UID with mode
-`0640`; the sandbox identity can neither read nor modify it after delivery.
-The archive quota is checked before copying. Archiving an already archived ID
-is idempotent.
-
-Archived files never expire; deleting them requires
-`DELETE /v1/workspace?purge=true` or removing the volume.
-
 ## Retention
 
 A background sweep runs every `RUNBOX_SWEEP_INTERVAL`. For each workspace it:
 
 - computes the newest modification time in the tree;
 - if older than `RUNBOX_RETENTION` and no execution holds the identity lock,
-  removes the workspace directory;
-- never touches `keep/`.
+  removes the workspace directory.
 
 The next call recreates the workspace and its conventional directories.
 
@@ -218,12 +194,11 @@ The next call recreates the workspace and its conventional directories.
 
 | Failure | Behavior |
 |---|---|
-| Runner restarts | Workspaces, archives and UID mappings are on disk and survive. If a mapping is lost or the UID range changes, the next command recursively `chown`s the workspace to the new UID. |
+| Runner restarts | Workspaces and UID mappings are on disk and survive. If a mapping is lost or the UID range changes, the next command recursively `chown`s the workspace to the new UID. |
 | Command killed by signal | `exit_code` is `-1` on Unix; stdout/stderr are still returned. |
 | Output pipe held by a grandchild | After a kill, the runner waits at most 5 seconds, then returns instead of leaking the request goroutine. |
 | Disk full | Upload/exec returns an internal error; the workspace remains. |
 | Corrupt file ID | `400 bad_request`. |
-| `keep/` missing | `404 not_found`. |
 
 ## Multiple replicas
 
@@ -234,14 +209,9 @@ one of:
 - a shared volume with a single writer per identity (not provided);
 - accepting that an identity may land on a fresh workspace.
 
-`keep/` is similarly local; a real archive should be copied into object storage
-by the application.
-
 ## Extension points
 
 - Swap the executor by implementing `sandbox.Backend`.
 - Add authentication (JWT, mTLS) in `internal/server` before the identity
   middleware.
 - Add a metrics endpoint without changing the runner.
-- Add a second storage backend for `keep/` by replacing `Runner.Archive` and
-  `Runner.OpenFile`.

@@ -386,29 +386,6 @@ func (c *Client) OpenPath(ctx context.Context, identity Identity, path string) (
 	return response.Body, responseFilename(response), nil
 }
 
-// Archive copies a produced file into the immutable keep/ store and returns
-// the long-lived file reference.
-func (c *Client) Archive(ctx context.Context, identity Identity, fileID string) (Output, error) {
-	client, err := c.scoped(identity)
-	if err != nil {
-		return Output{}, err
-	}
-	request, err := client.newRequest(ctx, http.MethodPost, "/v1/files/"+url.PathEscape(fileID)+"/keep", nil, "")
-	if err != nil {
-		return Output{}, err
-	}
-	response, err := client.send(request)
-	if err != nil {
-		return Output{}, err
-	}
-	defer response.Body.Close()
-	var output Output
-	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&output); err != nil {
-		return Output{}, Internal("invalid archive response: " + err.Error())
-	}
-	return output, nil
-}
-
 // List returns a directory listing inside the caller's workspace. An empty
 // path lists the workspace root.
 func (c *Client) List(ctx context.Context, identity Identity, path string) ([]ListEntry, error) {
@@ -429,18 +406,13 @@ func (c *Client) List(ctx context.Context, identity Identity, path string) ([]Li
 	return payload.Entries, nil
 }
 
-// DeleteWorkspace removes the caller's workspace. When purge is true the
-// archived deliverables are removed too.
-func (c *Client) DeleteWorkspace(ctx context.Context, identity Identity, purge bool) error {
+// DeleteWorkspace removes the caller's workspace.
+func (c *Client) DeleteWorkspace(ctx context.Context, identity Identity) error {
 	client, err := c.scoped(identity)
 	if err != nil {
 		return err
 	}
-	endpoint := "/v1/workspace"
-	if purge {
-		endpoint += "?purge=true"
-	}
-	request, err := client.newRequest(ctx, http.MethodDelete, endpoint, nil, "")
+	request, err := client.newRequest(ctx, http.MethodDelete, "/v1/workspace", nil, "")
 	if err != nil {
 		return err
 	}

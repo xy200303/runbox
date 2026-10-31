@@ -5,4 +5,4 @@ from .errors import IdentityError, RunboxError
 from .identity import Identity
 
 __all__ = ["Client", "FileUpload", "Identity", "IdentityError", "RunboxError"]
-__version__ = "0.1.0"
+__version__ = "0.2.0"

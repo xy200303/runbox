@@ -34,7 +34,6 @@ func newTestRunnerAt(t *testing.T, root string, mutate func(*Options)) *Runner {
 		MaxOutputFiles:           10,
 		MaxOutputBytes:           10 << 20,
 		QuotaBytes:               0,
-		KeepBytes:                0,
 		Retention:                24 * time.Hour,
 		DefaultTimeout:           10 * time.Second,
 		MaxTimeout:               30 * time.Second,
@@ -160,7 +159,7 @@ func TestOpenPathRejectsSymlinkEscape(t *testing.T) {
 	}
 }
 
-func TestExecOutputsAndArchive(t *testing.T) {
+func TestExecOutputs(t *testing.T) {
 	executor := newTestRunner(t, nil)
 	ctx := context.Background()
 	result, err := executor.Exec(ctx, testID("alice"), writeCommand("out/report.txt", "data"), nil, 10*time.Second)
@@ -196,39 +195,11 @@ func TestExecOutputsAndArchive(t *testing.T) {
 		t.Fatalf("unexpected listing: %+v", entries)
 	}
 
-	archived, err := executor.Archive(context.Background(), testID("alice"), output.FileID)
-	if err != nil {
-		t.Fatalf("archive: %v", err)
+	if err := executor.DeleteWorkspace(context.Background(), testID("alice")); err != nil {
+		t.Fatalf("delete workspace: %v", err)
 	}
-	keepID := archived.FileID
-	reader, _, err = executor.OpenFile(context.Background(), testID("alice"), keepID)
-	if err != nil {
-		t.Fatalf("open archived: %v", err)
-	}
-	if !strings.Contains(readAll(t, reader), "data") {
-		t.Fatal("archived content missing")
-	}
-	if _, err := os.Stat(filepath.Join(executor.workspace(testID("alice")), "keep")); !os.IsNotExist(err) {
-		t.Fatal("keep must not live inside the user-writable workspace")
-	}
-
-	// Later writes to out/ must not change the delivered copy.
-	if err := os.WriteFile(filepath.Join(executor.workspace(testID("alice")), "out", "report.txt"), []byte("changed"), 0o600); err != nil {
-		t.Fatalf("rewrite: %v", err)
-	}
-	reader, _, err = executor.OpenFile(context.Background(), testID("alice"), keepID)
-	if err != nil {
-		t.Fatalf("open archived again: %v", err)
-	}
-	if !strings.Contains(readAll(t, reader), "data") {
-		t.Fatal("archived copy was modified")
-	}
-
-	if err := executor.DeleteWorkspace(context.Background(), testID("alice"), true); err != nil {
-		t.Fatalf("delete: %v", err)
-	}
-	if _, err := os.Stat(executor.keepDir(testID("alice"))); !os.IsNotExist(err) {
-		t.Fatal("keep was not removed")
+	if _, err := os.Stat(executor.workspace(testID("alice"))); !os.IsNotExist(err) {
+		t.Fatal("workspace still exists")
 	}
 }
 
@@ -311,10 +282,6 @@ func TestSweep(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(workspace, "out", "deliver.txt"), []byte("payload"), 0o600); err != nil {
 		t.Fatalf("write out: %v", err)
 	}
-	archived, err := executor.Archive(context.Background(), testID("alice"), sandbox.EncodeFile(testKey(t, "alice"), "out", "deliver.txt"))
-	if err != nil {
-		t.Fatalf("archive: %v", err)
-	}
 	backdate(t, workspace, time.Now().Add(-48*time.Hour))
 	swept, err := executor.Sweep(context.Background())
 	if err != nil || swept != 1 {
@@ -323,11 +290,9 @@ func TestSweep(t *testing.T) {
 	if _, err := os.Stat(workspace); !os.IsNotExist(err) {
 		t.Fatal("expired workspace still exists")
 	}
-	reader, _, err := executor.OpenFile(context.Background(), testID("alice"), archived.FileID)
-	if err != nil {
-		t.Fatalf("archived file removed by sweep: %v", err)
+	if _, err := os.Stat(filepath.Join(workspace, "out", "deliver.txt")); !os.IsNotExist(err) {
+		t.Fatal("swept workspace file still exists")
 	}
-	readAll(t, reader)
 }
 
 func TestCappedBuffer(t *testing.T) {

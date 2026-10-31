@@ -13,8 +13,7 @@ caller / agent platform
         ▼
    Runbox container ──► /workspace volume
         │                     ├── workspaces/<key>/   mutable
-        │                     ├── keep/<key>/         immutable deliveries
-        │                     └── state/runbox.db           identities + UIDs
+        │                     └── state/runbox.db     identities + UIDs
         │
         └── outbound: package mirrors only (or no egress)
 
@@ -58,8 +57,7 @@ Measure with your real commands; these are starting values, not guarantees.
 | Container memory | 2 GiB | One large Python job or one office conversion with headroom. |
 | `RUNBOX_MAX_CONCURRENCY` | 2 | Excess requests fail fast with `409 busy`; add replicas before raising indefinitely. |
 | Workspace quota | 1 GiB per identity | Includes installs and caches. |
-| Archive quota | 1 GiB per identity | `RUNBOX_KEEP_BYTES`. |
-| Retention | 7 days idle | `RUNBOX_RETENTION`; `keep/` does not expire. |
+| Retention | 7 days idle | `RUNBOX_RETENTION`. |
 | Pids limit | 256 | Stops fork bombs while allowing LibreOffice helpers. |
 | Image | full or minimal | Minimal is roughly 150 MB; full adds LibreOffice and data libraries. |
 
@@ -93,15 +91,13 @@ Suggested initial SLOs for an internal deployment:
 ## Data lifecycle
 
 - The workspace is a cache: inputs, installs, intermediate files, outputs.
-- `out/` is returned to the caller and copied to `keep/` on delivery.
+- `out/` is returned to the caller and downloadable by path or file ID; the
+  caller owns persistence.
 - `state/runbox.db` holds identities and UID assignments. Back it up with
   SQLite tooling (or stop the runner first); keep it on local block storage, not
   NFS/SMB.
-- `keep/` is local and immutable to the sandbox identity, but it is not a
-  backup. Copy delivered artifacts into the application's file layer.
-- Deleting the volume deletes workspaces, archives and UID mappings. Runbox does
+- Deleting the volume deletes workspaces and UID mappings. Runbox does
   not read the old sandbox layout; there is nothing to convert.
-- Back up `keep/` only if it is the sole copy; prefer object storage.
 
 ## Observability
 
@@ -152,8 +148,7 @@ error says so.
 
 `RUNBOX_QUOTA_BYTES` blocks the next execution but does not stop a running
 command from filling the volume. Free space, delete workspaces
-(`DELETE /v1/workspace?purge=true`), or enforce a volume quota. Keep `keep/` only
-as long as delivery needs it.
+(`DELETE /v1/workspace`), or enforce a volume quota.
 
 ### `/metrics` returns 401
 
@@ -169,7 +164,7 @@ container runtime.
 
 ## Multi-replica
 
-Workspaces and archives are local to one runner. Multiple replicas require one
+Workspaces are local to one runner. Multiple replicas require one
 of:
 
 - sticky routing by canonical identity key to the same volume/runner;
@@ -177,14 +172,14 @@ of:
 - accepting that an identity may land on a fresh workspace.
 
 Do not mount the same `/workspace` read-write into two runners: UID mappings,
-janitor and archive writes assume a single writer.
+the janitor and SQLite writes assume a single writer.
 
 ## Upgrade and rollback
 
 1. Build and tag a new image; record the version exposed by `/health` and
    `runbox_build_info`.
 2. Recreate one runner; wait for `/ready`.
-3. Run the upload → exec → download → archive smoke test.
+3. Run the upload → exec → download → path download smoke test.
 4. Roll out the rest.
 5. On rollback, switch the image tag back; the volume layout is stable within
    Runbox. There is no compatibility with the old sandbox layout.
@@ -201,7 +196,7 @@ recreate; after that they are cancelled and their process groups are killed.
 - [ ] Egress policy.
 - [ ] `/ready` in the orchestrator, `/metrics` scraped, logs collected.
 - [ ] Alerts for readiness, 5xx, busy, timeout, disk and restarts.
-- [ ] Retention and archive policy agreed with the application.
+- [ ] Retention policy agreed with the application.
 - [ ] gVisor or one container per trust domain for hostile tenants.
 - [ ] Backup policy only for data that is the sole copy.
 - [ ] Upgrade and rollback rehearsed; smoke test automated.

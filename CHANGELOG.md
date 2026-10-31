@@ -1,11 +1,18 @@
 # Changelog
 
+## 0.2.0 — 2026-10-31
+
+- Removed the immutable `keep/` archive, `POST /v1/files/{id}/keep`,
+  `RUNBOX_KEEP_BYTES` and the `?purge` parameter. Callers download what they
+  need and persist it themselves; Runbox no longer keeps a second long-term
+  copy.
+
 ## 0.1.0 — 2026-10-31
 
 Initial extraction from the property-management platform's sandbox module.
 
-- HTTP runner (`runboxd`) with `/v1/exec`, `/v1/files`, `/v1/files/{id}/keep`,
-  `/v1/path`, `/v1/list`, `/v1/workspace`, `/v1/capabilities` and `/health`.
+- HTTP runner (`runboxd`) with `/v1/exec`, `/v1/files`, `/v1/path`,
+  `/v1/list`, `/v1/workspace`, `/v1/capabilities` and `/health`.
 - Gin-based HTTP layer with streaming multipart uploads, Range and HEAD
   downloads, and JSON errors for unknown routes and methods.
 - SQLite state store (GORM, pure-Go driver) for identities and UID assignments.
@@ -13,29 +20,27 @@ Initial extraction from the property-management platform's sandbox module.
   (`GET /v1/archive`) for intermediate files and directories.
 - Per-identity workspace, persisted UID assignment and per-identity
   serialization.
-- Upload, download, path download, directory listing, immutable archive and
-  workspace deletion. Deletion keeps `keep/` by default; `?purge=true` removes
-  archived deliverables too.
-- Bounded stdout/stderr capture, output caps, workspace and archive quotas,
-  configurable concurrency, timeouts and retention.
+- Upload, download, path download, directory listing and workspace deletion.
+  Delivered files are downloaded by the caller; there is no second long-term
+  copy inside Runbox.
+- Bounded stdout/stderr capture, output caps, workspace quota, configurable
+  concurrency, timeouts and retention.
 - Timeouts kill the command's process group; deployments grant `CAP_KILL`, and
   the runtime images use tini as PID 1 to reap the killed tree.
-- Symlink-aware path resolution; archive outside the writable workspace;
-  workspace subdirectory repair.
+- Symlink-aware path resolution and workspace subdirectory repair.
 - Minimal command environment; no server secret leakage.
-- Stdlib-only Go SDK and HTTP client.
+- Go, Python and Node SDKs.
 - No compatibility layer: canonical `X-Runbox-*` identity headers only,
   `RUNBOX_*` environment only.
 - Unified identity model: single token (`X-Runbox-Identity`) or scoped
   namespace + principal (`X-Runbox-Namespace`/`X-Runbox-Principal`), both
   normalized to a canonical SHA-256 key. Ambiguous/partial identities are
-  rejected. Scoped metadata is stored in `state/identities/<key>.json`.
+  rejected. Identity metadata is stored in `state/runbox.db`.
 - Versioned file IDs: `rbx_` + (version, identity key, kind, path).
 - Authentication is Bearer-only (`Authorization: Bearer`); `X-API-Key` is
   rejected.
 - Single-container, multi-identity design (dify-sandbox shape) with a
-  per-identity file isolation layer: workspace, quota, immutable archive and
-  symlink-safe paths.
+  per-identity file isolation layer: workspace, quota and symlink-safe paths.
 - Fail-closed Linux capability check; `RUNBOX_ALLOW_MISSING_CAPS` is a
   development-only override.
 - `/ready` storage readiness and `/metrics` Prometheus counters.

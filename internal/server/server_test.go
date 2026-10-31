@@ -41,7 +41,6 @@ func testConfig(t *testing.T) config.Config {
 		MaxBatchFiles:   1000,
 		MaxBatchBytes:   1 << 30,
 		QuotaBytes:      0,
-		KeepBytes:       0,
 		Retention:       time.Hour,
 		SweepInterval:   time.Hour,
 		MaxConcurrency:  2,
@@ -72,7 +71,6 @@ func newTestServer(t *testing.T, mutate func(*config.Config)) (*httptest.Server,
 		MaxOutputFiles:           cfg.MaxOutputFiles,
 		MaxOutputBytes:           cfg.MaxOutputBytes,
 		QuotaBytes:               cfg.QuotaBytes,
-		KeepBytes:                cfg.KeepBytes,
 		Retention:                cfg.Retention,
 		DefaultTimeout:           cfg.DefaultTimeout,
 		MaxTimeout:               cfg.MaxTimeout,
@@ -256,8 +254,8 @@ func TestExecRoundTrip(t *testing.T) {
 	}
 }
 
-func TestUploadExecArchive(t *testing.T) {
-	_, client, executor, cfg := newTestServer(t, nil)
+func TestUploadExec(t *testing.T) {
+	_, client, _, cfg := newTestServer(t, nil)
 	ctx := context.Background()
 
 	uploaded, err := client.Upload(ctx, "note.txt", strings.NewReader("hello-file"), 10)
@@ -342,45 +340,12 @@ func TestUploadExecArchive(t *testing.T) {
 		t.Fatalf("workspace root listing missing out/: %+v", rootEntries)
 	}
 
-	archived, err := client.Archive(ctx, sandbox.Identity{}, outputID)
-	if err != nil {
-		t.Fatalf("archive: %v", err)
-	}
-	reader, _, err = client.OpenFile(ctx, sandbox.Identity{}, archived.FileID)
-	if err != nil {
-		t.Fatalf("download archived: %v", err)
-	}
-	archivedContent, _ := io.ReadAll(reader)
-	reader.Close()
-	if !strings.Contains(string(archivedContent), "report-data") {
-		t.Fatalf("archived content %q", archivedContent)
-	}
 	key, _ := sandbox.TokenIdentity("alice").CanonicalKey()
-	keepPath := filepath.Join(cfg.Root, "keep", key, "report.txt")
-	if _, err := os.Stat(keepPath); err != nil {
-		t.Fatalf("keep file missing: %v", err)
-	}
-
-	// Workspace deletion keeps deliverables unless purge=true is requested.
-	if err := client.DeleteWorkspace(ctx, sandbox.Identity{}, false); err != nil {
+	if err := client.DeleteWorkspace(ctx, sandbox.Identity{}); err != nil {
 		t.Fatalf("delete workspace: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(cfg.Root, "workspaces", key)); !os.IsNotExist(err) {
 		t.Fatal("workspace still exists")
-	}
-	if _, _, err := client.OpenFile(ctx, sandbox.Identity{}, archived.FileID); err != nil {
-		t.Fatalf("archived file lost with workspace: %v", err)
-	}
-	if err := client.DeleteWorkspace(ctx, sandbox.Identity{}, true); err != nil {
-		t.Fatalf("delete keep: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(cfg.Root, "keep", key)); !os.IsNotExist(err) {
-		t.Fatal("keep still exists")
-	}
-
-	// The runner's own workspace must not leak archived files into commands.
-	if _, _, err := executor.OpenPath(context.Background(), sandbox.TokenIdentity("alice"), "keep/report.txt"); err == nil {
-		t.Fatal("keep must not be reachable through workspace paths")
 	}
 }
 
@@ -447,9 +412,6 @@ func TestCrossWorkspaceAccess(t *testing.T) {
 	bob := client.WithIdentity(sandbox.TokenIdentity("bob"))
 	if _, _, err := bob.OpenFile(ctx, sandbox.Identity{}, uploaded.FileID); err == nil {
 		t.Fatal("another identity downloaded the file")
-	}
-	if _, err := bob.Archive(ctx, sandbox.Identity{}, uploaded.FileID); err == nil {
-		t.Fatal("another identity archived the file")
 	}
 }
 
@@ -555,9 +517,6 @@ func TestReadyAndMetrics(t *testing.T) {
 	}
 	_, _ = io.ReadAll(reader)
 	reader.Close()
-	if _, err := client.Archive(ctx, sandbox.Identity{}, uploaded.FileID); err != nil {
-		t.Fatalf("archive: %v", err)
-	}
 
 	request, _ := http.NewRequest(http.MethodGet, ts.URL+"/metrics", nil)
 	request.Header.Set("Authorization", "Bearer test-key")
@@ -577,7 +536,6 @@ func TestReadyAndMetrics(t *testing.T) {
 		`runbox_active_execs 0`,
 		`runbox_upload_bytes_total 5`,
 		`runbox_download_bytes_total 5`,
-		`runbox_archive_total 1`,
 		`runbox_requests_total{status="4xx"} 1`,
 	} {
 		if !strings.Contains(text, want) {

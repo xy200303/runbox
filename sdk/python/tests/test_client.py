@@ -44,9 +44,6 @@ class Handler(BaseHTTPRequestHandler):
                 },
             )
             return
-        if self.path.startswith("/v1/files/") and self.path.endswith("/keep"):
-            self._json(200, {"name": "a.txt", "file_id": "rbx_keep", "size": 3})
-            return
         self._json(404, {"code": "not_found", "message": "not found"})
 
     def do_GET(self):
