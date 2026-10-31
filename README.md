@@ -10,7 +10,8 @@
   <a href="docs/deployment.md">Deployment</a> ·
   <a href="docs/security.md">Security</a> ·
   <a href="docs/comparison.md">Comparison</a> ·
-  <a href="examples/">Examples</a> ·
+  <a href="sdk/">SDKs</a> ·
+  <a href="https://runbox.xyun.dev">Website</a> ·
   <a href="README.zh-CN.md">简体中文</a>
 </p>
 
@@ -25,7 +26,7 @@
 </p>
 
 <p align="center">
-  <sub><strong>3.8k</strong> lines of Go · <strong>1</strong> binary · <strong>1</strong> container · <strong>1</strong> volume</sub>
+  <sub><strong>1</strong> binary · <strong>1</strong> container · <strong>1</strong> volume · <strong>SQLite</strong> state · <strong>Go / Python / Node</strong> SDKs</sub>
 </p>
 
 ---
@@ -33,6 +34,23 @@
 **Runbox** is a lightweight sandbox for agent workloads. It gives each caller a persistent Linux workspace: upload inputs, run Python, Node or shell commands, and collect the results. Identities share one long-running container, but keep separate UIDs, private workspaces, quotas and an immutable archive.
 
 It is small on purpose: one Go binary, one container, one volume, and a single HTTP API. The name is literal: **run in a box**.
+
+## Project layout
+
+| Path | Contents |
+|---|---|
+| `cmd/runboxd/` | Runner entrypoint: configuration, signals, graceful shutdown. |
+| `internal/server/` | Gin HTTP layer: auth, identity, streaming uploads, Range/HEAD downloads. |
+| `internal/runner/` | Workspace isolation, UID credentials, command execution, quotas, cleanup. |
+| `internal/store/` | SQLite (GORM) identities, UID assignments and metadata. |
+| `internal/config/` | `RUNBOX_*` configuration and advertised limits. |
+| `sdk/go/` | Go SDK (package `sandbox`), stdlib-only. |
+| `sdk/python/` | Python SDK, stdlib-only, `pip install runbox-sdk`. |
+| `sdk/node/` | TypeScript/Node SDK, `npm install runbox-sdk`. |
+| `website/` | Product site for [runbox.xyun.dev](https://runbox.xyun.dev). |
+| `docs/` | API, architecture, security, deployment, production and migration notes. |
+| `examples/` | Runnable Go, Python and curl walkthroughs. |
+| `.github/workflows/` | CI, container publishing, SDK releases and GitHub Pages. |
 
 ## Why Runbox?
 
@@ -62,6 +80,7 @@ Choose Runbox when you want one container next to your application, semi-trusted
 | **Bounded everything** | Upload size, command length, input count, captured stdout (head + tail), output count and size, workspace quota, archive quota, timeout, concurrency and retention. |
 | **Files are first-class** | Upload, execute with inputs, list, download by opaque ID or workspace path, archive, delete. Attachments stream as multipart; plain calls use JSON. |
 | **Large files** | Uploads stream to disk without buffering the whole body in memory; downloads support `Range` and `HEAD`. |
+| **Batch and paths** | Upload several files at once; download any workspace file by relative path, or stream a directory as a tar archive. Intermediate files need no file ID. |
 | **Fail-closed hardening** | Read-only root filesystem, dropped capabilities, `no-new-privileges`, tini as PID 1. Startup refuses to run as root without the capabilities it needs. |
 | **Observable by default** | `/ready` readiness, Prometheus metrics at `/metrics`, structured text or JSON request logs. |
 | **Small enough to audit** | Gin on the HTTP edge, a stdlib-only SDK, and a small operational footprint. |
@@ -78,6 +97,9 @@ cp .env.example .env
 docker compose up -d --build
 curl -fsS http://localhost:8099/health
 ```
+
+Prebuilt multi-arch images are published to
+`ghcr.io/xy200303/runbox:latest` and `ghcr.io/xy200303/runbox:latest-minimal`.
 
 ```json
 {"status":"healthy","version":"dev","uptime_seconds":2}
@@ -183,18 +205,49 @@ result, err := client.Run(ctx, sandbox.ExecRequest{
 
 `Client` also implements `sandbox.Backend`: use `Exec(ctx, identity, …)` when the identity is passed per call, or `Run` with a client bound to one identity.
 
-## Use from Python or curl
+## Python and Node SDKs
 
-The repository ships a stdlib-only Python client and CLI:
+Python is stdlib-only:
 
 ```bash
-RUNBOX_URL=http://localhost:8099 \
-RUNBOX_API_KEY="$RUNBOX_API_KEY" \
-RUNBOX_NAMESPACE=team-a RUNBOX_PRINCIPAL=user-42 \
-python3 examples/python/runbox_client.py exec "echo hello"
+pip install runbox-sdk
 ```
 
-A full curl walkthrough — upload, exec, list, download, archive — is in [`examples/curl.sh`](examples/curl.sh). More clients: [`examples/go`](examples/go) and [`examples/python`](examples/python).
+```python
+from runbox import Client, Identity
+
+client = Client(
+    "http://localhost:8099",
+    api_key=os.environ["RUNBOX_API_KEY"],
+    identity=Identity(namespace="team-a", principal="user-42"),
+)
+result = client.exec('python3 -c "print(6 * 7)"')
+print(result["stdout"])
+client.download_path("out/report.csv", "report.csv")
+client.download_archive(["out", "tmp"], "artifacts.tar")
+```
+
+Node ships typed ESM:
+
+```bash
+npm install runbox-sdk
+```
+
+```ts
+import { Client } from 'runbox-sdk'
+
+const client = new Client({
+  baseUrl: 'http://localhost:8099',
+  apiKey: process.env.RUNBOX_API_KEY,
+  identity: { namespace: 'team-a', principal: 'user-42' },
+})
+const result = await client.exec('echo hello')
+await client.downloadArchive(['out'], 'artifacts.tar')
+```
+
+Source: [`sdk/python`](sdk/python) and [`sdk/node`](sdk/node). A full curl
+walkthrough — upload, exec, list, download, archive — is in
+[`examples/curl.sh`](examples/curl.sh).
 
 ## Identity model
 
@@ -388,7 +441,7 @@ For development, yes. Production isolation is Linux-only, because per-identity U
 - [ ] Optional hard disk quotas per identity
 - [ ] A maintained seccomp profile and a gVisor deployment recipe
 - [ ] Tenant admin API: namespace-level usage, quota and purge
-- [ ] Published container images and tagged Go module releases
+- [ ] Signed container images, SBOMs and provenance attestations
 
 ## Contributing
 

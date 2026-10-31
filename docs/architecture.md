@@ -4,7 +4,7 @@
 
 - Give an agent a Linux workspace it can edit freely, across multiple calls.
 - Keep execution isolated enough for mutually non-hostile users on one host.
-- Keep the deployable unit small: one binary, one container, no database.
+- Keep the deployable unit small: one binary, one container, embedded SQLite.
 - Keep the wire contract usable from any language.
 
 ## Non-goals
@@ -52,8 +52,11 @@ contract.
 | `sdk/go/` | Public Go SDK: wire types, file-id codec, validation, HTTP client. No `internal/` imports. |
 | `internal/config/` | Environment parsing and validation. |
 | `internal/runner/` | Workspaces, UID allocation, execution, output collection, archive, janitor. |
-| `internal/server/` | Routing, auth, identity, body limits, streaming. |
+| `internal/store/` | SQLite identities, UID assignments and metadata (GORM). |
+| `internal/server/` | Gin routing, auth, identity, body limits, streaming. |
 | `cmd/runboxd/` | Wiring, logging, signals, graceful shutdown. |
+| `sdk/python/`, `sdk/node/` | Python and Node clients. |
+| `website/` | Static product site deployed to GitHub Pages. |
 
 The server depends on a concrete `*runner.Runner`; a compile-time assertion
 keeps it satisfying `sandbox.Backend`. The SDK does not depend on the server.

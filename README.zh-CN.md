@@ -10,7 +10,8 @@
   <a href="docs/deployment.md">部署</a> ·
   <a href="docs/security.md">安全</a> ·
   <a href="docs/comparison.md">对比</a> ·
-  <a href="examples/">示例</a> ·
+  <a href="sdk/">SDK</a> ·
+  <a href="https://runbox.xyun.dev">官网</a> ·
   <a href="README.md">English</a>
 </p>
 
@@ -25,7 +26,7 @@
 </p>
 
 <p align="center">
-  <sub><strong>3.8k</strong> 行 Go · <strong>1</strong> 个二进制 · <strong>1</strong> 个容器 · <strong>1</strong> 个卷</sub>
+  <sub><strong>1</strong> 个二进制 · <strong>1</strong> 个容器 · <strong>1</strong> 个卷 · <strong>SQLite</strong> 状态 · <strong>Go / Python / Node</strong> SDK</sub>
 </p>
 
 ---
@@ -33,6 +34,23 @@
 **Runbox** 是给 Agent 负载使用的轻量沙箱。它为每个调用方提供可持久化的 Linux 工作区：上传输入、执行 Python / Node / Shell、取回结果。多个身份共享一个长期运行的容器，同时各自拥有独立 UID、私有工作区、配额和不可变归档。
 
 部署保持简单：一个 Go 二进制、一个容器、一个卷，对外只有一套 HTTP 接口。名字就是字面意思：**run in a box**。
+
+## 目录结构
+
+| 路径 | 内容 |
+|---|---|
+| `cmd/runboxd/` | Runner 入口：配置、信号、优雅退出。 |
+| `internal/server/` | Gin HTTP 层：鉴权、身份、流式上传、Range/HEAD 下载。 |
+| `internal/runner/` | 工作区隔离、UID 凭据、命令执行、配额与清理。 |
+| `internal/store/` | SQLite（GORM）身份、UID 分配和元数据。 |
+| `internal/config/` | `RUNBOX_*` 配置与对外限额。 |
+| `sdk/go/` | Go SDK（包名 `sandbox`），仅标准库。 |
+| `sdk/python/` | Python SDK，仅标准库，`pip install runbox-sdk`。 |
+| `sdk/node/` | TypeScript/Node SDK，`npm install runbox-sdk`。 |
+| `website/` | [runbox.xyun.dev](https://runbox.xyun.dev) 产品官网。 |
+| `docs/` | API、架构、安全、部署、生产与迁移文档。 |
+| `examples/` | 可运行的 Go、Python、curl 示例。 |
+| `.github/workflows/` | CI、镜像发布、SDK 发布和 GitHub Pages。 |
 
 ## 为什么是 Runbox？
 
@@ -62,6 +80,7 @@ Runbox 采用 **dify-sandbox 的形态**：一个长期运行的容器，承载�
 | **所有资源都有边界** | 上传大小、命令长度、输入数量、stdout（保留首尾）、产物数量与大小、工作区配额、归档配额、超时、并发和保留期。 |
 | **文件是一等公民** | 上传、带输入执行、列目录、按不透明 ID 或工作区路径下载、归档、删除。带附件走流式 multipart，普通调用走 JSON。 |
 | **大文件** | 上传边读边落盘，不把整个请求体读进内存；下载支持 `Range` 和 `HEAD`。 |
+| **批量与路径** | 一次上传多个文件；按相对路径下载任意中间文件，或把目录打成 tar 一次取回。中间文件不需要 file ID。 |
 | **默认 fail-closed** | 只读根文件系统、丢弃能力、`no-new-privileges`、tini 作为 PID 1。以 root 启动却缺少所需能力时拒绝启动。 |
 | **自带可观测性** | `/ready` 就绪检查、`/metrics` Prometheus 指标、文本或 JSON 结构化日志。 |
 | **小到可以通读** | HTTP 层使用 Gin，SDK 保持仅标准库，运维面很小。 |
@@ -82,6 +101,9 @@ curl -fsS http://localhost:8099/health
 ```json
 {"status":"healthy","version":"dev","uptime_seconds":2}
 ```
+
+预构建的多架构镜像发布在 `ghcr.io/xy200303/runbox:latest` 和
+`ghcr.io/xy200303/runbox:latest-minimal`。
 
 默认镜像包含 LibreOffice、Python 和 Node。只做文本/代码任务、不需要 Office 转换时，构建精简镜像：
 
@@ -183,18 +205,47 @@ result, err := client.Run(ctx, sandbox.ExecRequest{
 
 `Client` 同时实现 `sandbox.Backend`：每次调用单独传身份时用 `Exec(ctx, identity, …)`；绑定单一身份时用 `Run`。
 
-## 在 Python 或 curl 中使用
+## Python 与 Node SDK
 
-仓库自带仅依赖标准库的 Python 客户端和 CLI：
+Python 仅依赖标准库：
 
 ```bash
-RUNBOX_URL=http://localhost:8099 \
-RUNBOX_API_KEY="$RUNBOX_API_KEY" \
-RUNBOX_NAMESPACE=team-a RUNBOX_PRINCIPAL=user-42 \
-python3 examples/python/runbox_client.py exec "echo hello"
+pip install runbox-sdk
 ```
 
-完整的 curl 走查（上传、执行、列目录、下载、归档）见 [`examples/curl.sh`](examples/curl.sh)。更多客户端：[`examples/go`](examples/go)、[`examples/python`](examples/python)。
+```python
+from runbox import Client, Identity
+
+client = Client(
+    "http://localhost:8099",
+    api_key=os.environ["RUNBOX_API_KEY"],
+    identity=Identity(namespace="team-a", principal="user-42"),
+)
+result = client.exec('python3 -c "print(6 * 7)"')
+print(result["stdout"])
+client.download_path("out/report.csv", "report.csv")
+client.download_archive(["out", "tmp"], "artifacts.tar")
+```
+
+Node 提供带类型的 ESM：
+
+```bash
+npm install runbox-sdk
+```
+
+```ts
+import { Client } from 'runbox-sdk'
+
+const client = new Client({
+  baseUrl: 'http://localhost:8099',
+  apiKey: process.env.RUNBOX_API_KEY,
+  identity: { namespace: 'team-a', principal: 'user-42' },
+})
+const result = await client.exec('echo hello')
+await client.downloadArchive(['out'], 'artifacts.tar')
+```
+
+源码：[`sdk/python`](sdk/python)、[`sdk/node`](sdk/node)。完整 curl 走查（上传、执行、列目录、下载、归档）见 [`examples/curl.sh`](examples/curl.sh)。
 
 ## 身份模型
 
@@ -388,7 +439,7 @@ Dify 的 sandbox 是 Dify 技术栈的一部分，按任务隔离文件。Runbox
 - [ ] 可选的按身份硬磁盘配额
 - [ ] 维护中的 seccomp profile 与 gVisor 部署配方
 - [ ] 租户管理 API：namespace 级用量、配额与清理
-- [ ] 发布容器镜像与带 tag 的 Go module
+- [ ] 镜像签名、SBOM 与 provenance 证明
 
 ## 贡献
 

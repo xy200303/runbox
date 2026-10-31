@@ -19,9 +19,12 @@ security-relevant check.
 
 ```bash
 make check
+make sdk-test
+make website-build
 ```
 
-That runs a gofmt check, `go vet ./...` and `go test -race ./...`.
+`make check` runs a gofmt check, `go vet ./...` and `go test -race ./...`.
+`sdk-test` runs the Python and Node suites; `website-build` builds the site.
 
 Security-sensitive paths have tests; please add one when you change:
 
@@ -45,11 +48,16 @@ Security-sensitive paths have tests; please add one when you change:
 
 ## Commit messages
 
-Short imperative subject, then a body explaining the why. No generated files.
+Use Conventional Commits: `feat(scope):`, `fix(scope):`, `docs:`, `build:`,
+`ci:`, `refactor:`, `test:` or `chore:`. Keep the subject imperative and add a
+body explaining the why when the change is not obvious.
 
 ## Releases
 
 1. Update `CHANGELOG.md`.
 2. Tag the release (`vX.Y.Z`) and push the tag.
-3. Build images with `make docker docker-minimal`.
+3. `docker.yml` publishes multi-arch images to GHCR, `release.yml` creates the
+   GitHub release, and the Python/npm jobs publish when `PYPI_API_TOKEN` and
+   `NPM_TOKEN` are configured.
+4. The website deploys from `main` through `pages.yml`.
 

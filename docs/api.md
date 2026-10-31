@@ -69,6 +69,7 @@ All errors are JSON:
 | 409 | `busy` | The runner is at its concurrency limit. |
 | 409 | `timeout` | The command exceeded its timeout and was killed. |
 | 409 | `quota_exceeded` | Workspace or archive quota exceeded. |
+| 409 | `uid_exhausted` | No free UID in the configured range; raise `RUNBOX_UID_MAX` or remove idle workspaces. |
 | 413 | `too_large` | Upload or request body exceeds the limit. |
 | 415 | `unsupported_media_type` | Unsupported request content type. |
 | 500 | `internal` | Unexpected failure. |
@@ -133,6 +134,8 @@ and paths never become labels.
     "max_stdout_bytes": 204800,
     "max_output_files": 20,
     "max_output_bytes": 209715200,
+    "max_batch_files": 1000,
+    "max_batch_bytes": 1073741824,
     "quota_bytes": 1073741824,
     "keep_bytes": 1073741824,
     "retention_seconds": 604800,

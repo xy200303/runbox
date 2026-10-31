@@ -48,3 +48,6 @@ Initial extraction from the property-management platform's sandbox module.
 - Read-only compose deployment with dropped capabilities and resource limits.
 - Bilingual README, API/architecture/security/deployment/migration docs,
   Go/Python/curl examples and CI.
+- Go, Python and Node SDKs under `sdk/`.
+- Static product website under `website/`, deployed to `runbox.xyun.dev`.
+- GitHub Actions for CI, multi-arch GHCR images, SDK releases and Pages.
