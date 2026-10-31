@@ -103,10 +103,8 @@ class Runbox:
         with self._request("GET", "/v1/capabilities") as response:
             return json.load(response)
 
-    def exec(self, command: str, timeout: int = 60, inputs: list[str] | None = None) -> dict:
-        body = json.dumps(
-            {"command": command, "timeout_seconds": timeout, "inputs": inputs or []}
-        ).encode()
+    def exec(self, command: str, timeout: int = 60) -> dict:
+        body = json.dumps({"command": command, "timeout_seconds": timeout}).encode()
         with self._request(
             "POST",
             "/v1/exec",

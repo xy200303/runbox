@@ -84,7 +84,7 @@ if err != nil {
 
 // Scoped mode: the application's tenant/user model maps directly.
 identity := sandbox.ScopedIdentity(tenantID, userID)
-result, err := client.Exec(ctx, identity, command, inputs, 60*time.Second)
+result, err := client.Exec(ctx, identity, command, 60*time.Second)
 
 // Token mode is equivalent for callers that already have one identifier:
 // identity := sandbox.TokenIdentity("01J...")
@@ -136,9 +136,9 @@ the application; do not put it in Runbox. For example:
 ```go
 type runboxBackend struct{ client *sandbox.Client }
 
-func (b runboxBackend) Exec(ctx context.Context, tenant, user, command string, inputs []string, timeoutSeconds int) (*sandbox.Result, error) {
+func (b runboxBackend) Exec(ctx context.Context, tenant, user, command string, timeoutSeconds int) (*sandbox.Result, error) {
     identity := identityFor(tenant, user) // the caller's derivation
-    return b.client.Exec(ctx, identity, command, inputs,
+    return b.client.Exec(ctx, identity, command,
         time.Duration(timeoutSeconds)*time.Second)
 }
 ```
@@ -172,7 +172,7 @@ delivery should keep using the application's file layer.
 
 - [ ] The old client is no longer built or imported.
 - [ ] `GET /health` and `GET /v1/capabilities` work with the new service.
-- [ ] Upload → `Run`/`Exec` with `inputs` → output download works.
+- [ ] Upload → `Run`/`Exec` → output path download works.
 - [ ] `OpenPath`, `List` and `DeleteWorkspace` work.
 - [ ] A timeout returns `409 timeout` and the command process is gone
       (`CAP_KILL` present).

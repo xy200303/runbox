@@ -49,7 +49,7 @@ contract.
 
 | Package | Role |
 |---|---|
-| `sdk/go/` | Public Go SDK: wire types, file-id codec, validation, HTTP client. No `internal/` imports. |
+| `sdk/go/` | Public Go SDK: wire types, path/identity validation, HTTP client. No `internal/` imports. |
 | `internal/config/` | Environment parsing and validation. |
 | `internal/runner/` | Workspaces, UID allocation, execution, output collection, janitor. |
 | `internal/store/` | SQLite identities, UID assignments and metadata (GORM). |
@@ -89,7 +89,7 @@ keeps it satisfying `sandbox.Backend`. The SDK does not depend on the server.
   - **Scoped**: namespace + principal (each 1-128 `[A-Za-z0-9._-]`).
   Supplying both forms, or half of the scoped form, is rejected.
 - Both forms normalize to a SHA-256 canonical key. The key, not the raw value,
-  is used for directories, UID assignments, locks and file IDs. Scoped
+  is used for directories, UID assignments and locks. Scoped
   namespace/principal are stored in the `identities` table of
   `state/runbox.db` for future tenant-level operations; tokens are never
   persisted.
@@ -122,7 +122,7 @@ Two independent mechanisms:
    immediately. A bounded queue was rejected on purpose: queued requests hide
    overload and consume file descriptors.
 
-Reads (`OpenFile`, `OpenPath`, `List`) do not take the lock and can run while a
+Reads (`OpenPath`, `List`) do not take the lock and can run while a
 command is executing.
 
 The janitor uses `TryLock`; a workspace with an execution in flight is skipped.
@@ -146,7 +146,7 @@ The janitor uses `TryLock`; a workspace with an execution in flight is skipped.
    This requires `CAP_KILL`; without it the error message says the kill failed.
 9. Collect regular files under `out/` modified since the call started, honoring
    count and size caps and skipping symlinks.
-10. Release the slot and lock, and return `exit_code`, output and file IDs.
+10. Release the slot and lock, and return `exit_code` and output paths.
 
 Non-zero exits are normal results, not transport errors.
 
@@ -174,7 +174,7 @@ link would leak a file the identity cannot read by itself.
 - Recursively walks `out/`.
 - Skips directories, symlinks, zero-byte files and files older than
   `startedAt - 1s` (filesystem timestamp granularity).
-- Returns workspace-relative names with `/` separators and opaque file IDs.
+- Returns workspace-relative paths with `/` separators.
 - Stops collecting after `RUNBOX_MAX_OUTPUT_FILES` or when the cumulative size
   would exceed `RUNBOX_MAX_OUTPUT_BYTES`.
 
@@ -198,7 +198,6 @@ The next call recreates the workspace and its conventional directories.
 | Command killed by signal | `exit_code` is `-1` on Unix; stdout/stderr are still returned. |
 | Output pipe held by a grandchild | After a kill, the runner waits at most 5 seconds, then returns instead of leaking the request goroutine. |
 | Disk full | Upload/exec returns an internal error; the workspace remains. |
-| Corrupt file ID | `400 bad_request`. |
 
 ## Multiple replicas
 

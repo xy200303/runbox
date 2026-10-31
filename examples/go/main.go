@@ -1,5 +1,5 @@
-// Command example shows the small end-to-end flow: run Python, download the
-// artifact, and keep a long-lived copy.
+// Command example shows the small end-to-end flow: run Python and download the
+// artifact by its workspace-relative path.
 //
 //	RUNBOX_URL=http://localhost:8099 RUNBOX_API_KEY=... go run ./examples/go
 package main

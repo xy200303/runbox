@@ -91,8 +91,8 @@ Suggested initial SLOs for an internal deployment:
 ## Data lifecycle
 
 - The workspace is a cache: inputs, installs, intermediate files, outputs.
-- `out/` is returned to the caller and downloadable by path or file ID; the
-  caller owns persistence.
+- `out/` is returned to the caller and downloadable by path; the caller owns
+  persistence.
 - `state/runbox.db` holds identities and UID assignments. Back it up with
   SQLite tooling (or stop the runner first); keep it on local block storage, not
   NFS/SMB.

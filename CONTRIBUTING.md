@@ -28,7 +28,7 @@ make website-build
 
 Security-sensitive paths have tests; please add one when you change:
 
-- `sdk/go/fileid.go` — file-id parsing and path validation;
+- `sdk/go/paths.go` — path normalization and file-name sanitization;
 - `internal/runner/paths.go` — symlink and traversal handling;
 - `internal/runner/exec.go` — environment, output caps, timeouts;
 - `internal/server/` — authentication, identity and body limits.

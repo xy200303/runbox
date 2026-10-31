@@ -1,9 +1,9 @@
 // Package sandbox is the public Go SDK for Runbox, a self-hosted code
 // execution sandbox for AI agents.
 //
-// It contains the shared wire types, the file-id codec, validation helpers
-// and an HTTP client. The server-side implementation lives under internal/
-// and is not imported by SDK users.
+// It contains the shared wire types, path and identity validation, and an HTTP
+// client. The server-side implementation lives under internal/ and is not
+// imported by SDK users.
 package sandbox
 
 import (

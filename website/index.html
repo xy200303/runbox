@@ -134,7 +134,7 @@
           <article class="feature">
             <span class="feature-no">02</span>
             <h3>按身份隔离文件</h3>
-            <p>私有工作区、工作区配额和符号链接安全的路径解析。文件按路径或 file ID 下载，持久化由调用方负责。</p>
+            <p>私有工作区、工作区配额和符号链接安全的路径解析。文件按工作区路径下载，持久化由调用方负责。</p>
           </article>
           <article class="feature">
             <span class="feature-no">03</span>
@@ -248,7 +248,7 @@ curl -fsS http://localhost:8099/health</code></pre>
   -H "X-Runbox-Principal: user-42" \
   -H "Content-Type: application/json" \
   -d '{"command":"mkdir -p out && echo hello > out/report.txt"}'</code></pre>
-            <p class="tab-note">产物返回 file_id；任意中间文件用 <code>GET /v1/path?path=...</code> 下载，目录用 <code>/v1/archive</code> 打包。</p>
+            <p class="tab-note">产物带工作区路径返回；任意中间文件用 <code>GET /v1/path?path=...</code> 下载，目录用 <code>/v1/archive</code> 打包。</p>
           </div>
           <div class="tab-panel" data-panel="go">
             <pre><code>go get github.com/xy200303/runbox/sdk/go</code></pre>
@@ -350,7 +350,7 @@ security_opt:
           </details>
           <details>
             <summary>中间文件怎么下载？必须为每个文件生成 ID 吗？</summary>
-            <p>不需要。任意文件都可以通过相对路径下载，例如 <code>GET /v1/path?path=tmp/step2/data.csv</code>；目录用 <code>GET /v1/archive?path=out</code> 打成 tar。file ID 只用于上传文件和执行产物。</p>
+            <p>不需要。任意文件都可以通过相对路径下载，例如 <code>GET /v1/path?path=tmp/step2/data.csv</code>；目录用 <code>GET /v1/archive?path=out</code> 打成 tar。上传文件和执行产物都直接用相对路径。</p>
           </details>
           <details>
             <summary>可以执行 apt-get 吗？</summary>

@@ -33,7 +33,7 @@ X-Runbox-Principal: user-42
 - Supplying both forms, or only half of namespace+principal, returns
   `400 bad_request`; Runbox never merges two identity sources.
 - The server hashes the identity into a canonical storage key (SHA-256). The
-  key, not the raw value, is used for workspaces, UIDs and file IDs.
+  key, not the raw value, is used for workspaces, UIDs and locks.
 - For scoped identities, namespace/principal are stored in the `identities`
   table of `state/runbox.db` for tenant-level operations. Tokens are not
   persisted.
@@ -165,7 +165,6 @@ Content-Type: application/json
 - `timeout_seconds` is optional; `0`/absent uses `RUNBOX_DEFAULT_TIMEOUT` and
   values above `RUNBOX_MAX_TIMEOUT` are clamped.
 - Files are referenced by workspace-relative path, for example `files/input.csv`.
-  There are no file IDs to translate.
 
 ### Multipart
 
@@ -301,7 +300,7 @@ curl -fsS -H "Authorization: Bearer $KEY" \
 
 The response is `application/x-tar` with
 `Content-Disposition: attachment; filename="runbox-files.tar"`. This is the
-batch download path for intermediate files; no file IDs are required.
+batch download path for intermediate files; no extra identifiers are required.
 
 ## DELETE /v1/workspace
 
