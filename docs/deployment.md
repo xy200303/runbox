@@ -44,8 +44,9 @@ Prebuilt multi-arch images are published by the `docker` workflow:
 ```text
 ghcr.io/xy200303/runbox:latest
 ghcr.io/xy200303/runbox:latest-minimal
-ghcr.io/xy200303/runbox:v0.2.0
-ghcr.io/xy200303/runbox:v0.2.0-minimal
+ghcr.io/xy200303/runbox:v0.2.2
+ghcr.io/xy200303/runbox:v0.2.2-minimal
+ghcr.io/xy200303/runbox:v0.2.2-toolbox
 ```
 
 Pin a version tag in production; do not rely on `latest`.

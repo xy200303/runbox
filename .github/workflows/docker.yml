@@ -20,6 +20,8 @@ jobs:
             suffix: ""
           - target: minimal
             suffix: "-minimal"
+          - target: toolbox
+            suffix: "-toolbox"
     steps:
       - uses: actions/checkout@v4
 

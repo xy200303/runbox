@@ -1,11 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.2.2 — 2026-10-31
 
 - Renamed `RUNBOX_MAX_INPUTS` to `RUNBOX_MAX_ATTACHMENTS` and the capabilities
   field `max_inputs` to `max_attachments`.
 - `POST /v1/files` now accepts only the `file` field; use
   `POST /v1/files/batch` for multiple files.
+- Documented `GET /v1/archive` as the batch download entry and the matching SDK
+  methods (`DownloadArchive`, `download_archive`, `downloadArchive`).
+- Publish the `toolbox` image alongside `full` and `minimal`, and document
+  one-line `docker pull`/`docker run` commands plus SDK integration rules.
 
 ## 0.2.1 — 2026-10-31
 

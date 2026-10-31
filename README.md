@@ -17,7 +17,7 @@
 
 <p align="center">
   <a href="https://github.com/xy200303/runbox/actions/workflows/ci.yml"><img src="https://github.com/xy200303/runbox/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
-  <img src="https://img.shields.io/badge/version-0.2.1-2563EB?style=for-the-badge" alt="Version 0.2.1">
+  <img src="https://img.shields.io/badge/version-0.2.2-2563EB?style=for-the-badge" alt="Version 0.2.2">
   <img src="https://img.shields.io/badge/Go-1.26-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go 1.26">
   <img src="https://img.shields.io/badge/license-MIT-16A34A?style=for-the-badge" alt="MIT license">
   <img src="https://img.shields.io/badge/docker-ready-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker ready">
@@ -87,6 +87,40 @@ Choose Runbox when you want one container next to your application, semi-trusted
 | **Agent-friendly toolchain** | `git`, `curl`/`wget`, `jq`, `ripgrep`, `fd`, `bat`, `tree`, `file`, `sqlite3`, `less`, `nano`, `lsof` and standard GNU tools are preinstalled. |
 | **Small enough to audit** | Gin on the HTTP edge, a stdlib-only SDK, and a small operational footprint. |
 
+## Docker images
+
+Three variants share the same API and run as root inside the container so they
+can assign per-identity UIDs:
+
+| Variant | Pull | Unpacked | Use |
+|---|---|---|---|
+| `full` | `docker pull ghcr.io/xy200303/runbox:latest` | ~1.4 GB | Office documents, spreadsheets, pandas/numpy |
+| `minimal` | `docker pull ghcr.io/xy200303/runbox:latest-minimal` | ~585 MB | Code, text, PDF extraction |
+| `toolbox` | `docker pull ghcr.io/xy200303/runbox:latest-toolbox` | minimal + ~300 MB | Packages that compile native extensions |
+
+Versioned tags follow the release, for example `v0.2.2`, `v0.2.2-minimal` and
+`v0.2.2-toolbox`.
+
+Run any variant with the same command; only the image tag changes:
+
+```bash
+export RUNBOX_API_KEY="$(openssl rand -hex 32)"
+docker run -d --name runbox \
+  --read-only \
+  --tmpfs /tmp:rw,exec,nosuid,size=512m \
+  --cap-drop ALL \
+  --cap-add CHOWN --cap-add FOWNER --cap-add SETUID --cap-add SETGID \
+  --cap-add DAC_OVERRIDE --cap-add KILL \
+  --security-opt no-new-privileges:true \
+  -p 8099:8099 \
+  -e RUNBOX_API_KEY="$RUNBOX_API_KEY" \
+  -v runbox-data:/workspace \
+  ghcr.io/xy200303/runbox:latest
+```
+
+Use `:latest-minimal` for code/text workloads and `:latest-toolbox` when pip or
+npm needs to build native extensions.
+
 ## Quick start
 
 ### 1. Start the runner
@@ -99,9 +133,6 @@ cp .env.example .env
 docker compose up -d --build
 curl -fsS http://localhost:8099/health
 ```
-
-Prebuilt multi-arch images are published to
-`ghcr.io/xy200303/runbox:latest` and `ghcr.io/xy200303/runbox:latest-minimal`.
 
 ```json
 {"status":"healthy","version":"dev","uptime_seconds":2}
@@ -250,6 +281,25 @@ await client.downloadArchive(['out'], 'artifacts.tar')
 Source: [`sdk/python`](sdk/python) and [`sdk/node`](sdk/node). A full curl
 walkthrough — upload, exec, list, download — is in
 [`examples/curl.sh`](examples/curl.sh).
+
+## SDK integration rules
+
+Every SDK follows the same contract:
+
+1. **Base URL** points at `runboxd`, for example `http://localhost:8099`.
+2. **Authentication** is `Authorization: Bearer <RUNBOX_API_KEY>`.
+3. **Identity** is exactly one form: `X-Runbox-Identity`, or
+   `X-Runbox-Namespace` + `X-Runbox-Principal`.
+4. **Files are paths.** Every path is relative to that identity's workspace;
+   there are no file IDs to translate.
+5. **Uploads** return paths: `POST /v1/files` with field `file`, or
+   `POST /v1/files/batch` with repeated `files`.
+6. **Exec attachments** use repeated `files` fields and land in `files/`; the
+   command refers to them as `files/<name>`.
+7. **Downloads** use `GET /v1/path?path=...` for one file and
+   `GET /v1/archive?path=...&path=...` for a batch tar. The SDKs expose these as
+   `OpenPath`/`DownloadPathTo`, `download_path`, `downloadPath`, and
+   `DownloadArchive`/`download_archive`/`downloadArchive`.
 
 ## Identity model
 

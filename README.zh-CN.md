@@ -17,7 +17,7 @@
 
 <p align="center">
   <a href="https://github.com/xy200303/runbox/actions/workflows/ci.yml"><img src="https://github.com/xy200303/runbox/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI 状态"></a>
-  <img src="https://img.shields.io/badge/version-0.2.1-2563EB?style=for-the-badge" alt="版本 0.2.1">
+  <img src="https://img.shields.io/badge/version-0.2.2-2563EB?style=for-the-badge" alt="版本 0.2.2">
   <img src="https://img.shields.io/badge/Go-1.26-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go 1.26">
   <img src="https://img.shields.io/badge/license-MIT-16A34A?style=for-the-badge" alt="MIT 许可证">
   <img src="https://img.shields.io/badge/docker-ready-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker">
@@ -87,6 +87,37 @@ Runbox 采用 **dify-sandbox 的形态**：一个长期运行的容器，承载�
 | **Agent 常用工具链** | 预装 `git`、`curl`/`wget`、`jq`、`ripgrep`、`fd`、`bat`、`tree`、`file`、`sqlite3`、`less`、`nano`、`lsof` 和标准 GNU 工具。 |
 | **小到可以通读** | HTTP 层使用 Gin，SDK 保持仅标准库，运维面很小。 |
 
+## 镜像
+
+三个变体共用同一套 API；容器内以 root 启动，才能为每个身份分配独立 UID：
+
+| 变体 | 拉取 | 解包后体积 | 适用 |
+|---|---|---|---|
+| `full` | `docker pull ghcr.io/xy200303/runbox:latest` | 约 1.4GB | Office 文档、表格、pandas/numpy |
+| `minimal` | `docker pull ghcr.io/xy200303/runbox:latest-minimal` | 约 585MB | 代码、文本、PDF 提取 |
+| `toolbox` | `docker pull ghcr.io/xy200303/runbox:latest-toolbox` | minimal + 约 300MB | 需要编译原生扩展的包 |
+
+版本 tag 跟随 release，例如 `v0.2.2`、`v0.2.2-minimal`、`v0.2.2-toolbox`。
+
+三个变体用同一条命令启动，只换镜像 tag：
+
+```bash
+export RUNBOX_API_KEY="$(openssl rand -hex 32)"
+docker run -d --name runbox \
+  --read-only \
+  --tmpfs /tmp:rw,exec,nosuid,size=512m \
+  --cap-drop ALL \
+  --cap-add CHOWN --cap-add FOWNER --cap-add SETUID --cap-add SETGID \
+  --cap-add DAC_OVERRIDE --cap-add KILL \
+  --security-opt no-new-privileges:true \
+  -p 8099:8099 \
+  -e RUNBOX_API_KEY="$RUNBOX_API_KEY" \
+  -v runbox-data:/workspace \
+  ghcr.io/xy200303/runbox:latest
+```
+
+代码/文本任务用 `:latest-minimal`，需要编译原生扩展时用 `:latest-toolbox`。
+
 ## 快速开始
 
 ### 1. 启动
@@ -103,9 +134,6 @@ curl -fsS http://localhost:8099/health
 ```json
 {"status":"healthy","version":"dev","uptime_seconds":2}
 ```
-
-预构建的多架构镜像发布在 `ghcr.io/xy200303/runbox:latest` 和
-`ghcr.io/xy200303/runbox:latest-minimal`。
 
 默认镜像包含 LibreOffice、Python 和 Node。只做文本/代码任务、不需要 Office 转换时，构建精简镜像：
 
@@ -248,6 +276,23 @@ await client.downloadArchive(['out'], 'artifacts.tar')
 ```
 
 源码：[`sdk/python`](sdk/python)、[`sdk/node`](sdk/node)。完整 curl 走查（上传、执行、列目录、下载）见 [`examples/curl.sh`](examples/curl.sh)。
+
+## SDK 接入规则
+
+所有 SDK 遵循同一套契约：
+
+1. **Base URL** 指向 `runboxd`，例如 `http://localhost:8099`。
+2. **认证**使用 `Authorization: Bearer <RUNBOX_API_KEY>`。
+3. **身份**二选一：`X-Runbox-Identity`，或 `X-Runbox-Namespace` +
+   `X-Runbox-Principal`。
+4. **文件就是路径**：所有路径相对于该身份的工作区，没有 file ID 需要转换。
+5. **上传返回路径**：`POST /v1/files` 用 `file` 字段；多个文件用
+   `POST /v1/files/batch`，重复 `files` 字段。
+6. **exec 附件**用重复 `files` 字段，落到 `files/`；命令里写 `files/<name>`。
+7. **下载**单文件用 `GET /v1/path?path=...`，批量用
+   `GET /v1/archive?path=...&path=...` 返回 tar。SDK 对应
+   `OpenPath`/`DownloadPathTo`、`download_path`、`downloadPath` 和
+   `DownloadArchive`/`download_archive`/`downloadArchive`。
 
 ## 身份模型
 

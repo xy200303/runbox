@@ -14,7 +14,7 @@ import (
 
 const (
 	// Version is the SDK version reported in the User-Agent header.
-	Version = "0.2.0"
+	Version = "0.2.2"
 
 	// Kinds accepted in a file reference.
 	KindFiles = "files"
