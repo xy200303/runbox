@@ -97,7 +97,7 @@ class Client:
         identity: Optional[Identity] = None,
         extra: Optional[Dict[str, str]] = None,
     ) -> Dict[str, str]:
-        headers = {"Accept": "application/json", "User-Agent": "runbox-python/0.2.3"}
+        headers = {"Accept": "application/json", "User-Agent": "runbox-python/0.2.4"}
         selected = self._resolve_identity(identity)
         if selected is not None:
             headers.update(selected.headers())

@@ -208,7 +208,7 @@ const faqs = [
             target="_blank"
             rel="noreferrer"
           >
-            <span class="badge-ver">v0.2.3</span>
+            <span class="badge-ver">v0.2.4</span>
             <span class="badge-sep" />
             <span class="badge-text">MIT · 单机服务器 · 一个容器</span>
           </a>

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.4 — 2026-11-01
 
 Security and operability fixes found by an adversarial test pass.
 

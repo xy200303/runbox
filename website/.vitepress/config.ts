@@ -14,7 +14,7 @@ const softwareJsonLd = {
   description: SITE_DESC,
   url: SITE_URL,
   downloadUrl: 'https://github.com/xy200303/runbox/releases/latest',
-  softwareVersion: '0.2.3',
+  softwareVersion: '0.2.4',
   applicationCategory: 'DeveloperApplication',
   operatingSystem: 'Linux (container)',
   inLanguage: 'zh-CN',

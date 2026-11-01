@@ -99,8 +99,8 @@ can assign per-identity UIDs:
 | `minimal` | `docker pull ghcr.io/xy200303/runbox:latest-minimal` | ~170 MB | Code, text, PDF extraction |
 | `toolbox` | `docker pull ghcr.io/xy200303/runbox:latest-toolbox` | ~285 MB | Compiling without the Office layer |
 
-Versioned tags follow the release, for example `v0.2.3`, `v0.2.3-minimal` and
-`v0.2.3-toolbox`.
+Versioned tags follow the release, for example `v0.2.4`, `v0.2.4-minimal` and
+`v0.2.4-toolbox`.
 
 Run any variant with the same command; only the image tag changes:
 
