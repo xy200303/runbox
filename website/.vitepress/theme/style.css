@@ -288,3 +288,47 @@ html {
     margin-top: 40px;
   }
 }
+
+/* ===========================================================================
+   验证页：收尾结论条
+   =========================================================================== */
+.rb-band {
+  margin: 44px 0 8px;
+  padding: 28px 30px;
+  border-radius: var(--rb-radius-lg);
+  background: var(--rb-dark);
+  color: #e8edf2;
+}
+.rb-band p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 14px;
+  line-height: 1.85;
+}
+.rb-band p strong {
+  color: #ffffff;
+  font-weight: 600;
+}
+.rb-band code {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.10);
+  color: #a7f3d0;
+  font-family: var(--rb-font-mono);
+  font-size: 0.92em;
+}
+.rb-band .rb-band-title {
+  margin-bottom: 10px;
+  color: #f3f5f7;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+@media (max-width: 640px) {
+  .rb-band {
+    padding: 22px 20px;
+  }
+  .rb-band .rb-band-title {
+    font-size: 19px;
+  }
+}

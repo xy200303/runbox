@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { withBase } from 'vitepress'
 import CodeTabs from './components/CodeTabs.vue'
+import LineChart from './components/LineChart.vue'
 
 const stats = [
   { value: '1 个容器', label: '承载全部身份', note: '不为每个用户新建运行时' },
@@ -41,6 +42,13 @@ const proof = [
   { value: '0', label: '越权 / 穿越成功', note: '无跨身份读写，无逃逸' },
   { value: '8.5 ms', label: 'exec p50', note: 'p95 30.9 ms，max 33 ms' },
   { value: '667 exec/s', label: '16 路并发', note: '超出并发上限立即 409' }
+]
+
+const throughput = [
+  { label: '2 路', value: 67 },
+  { label: '4 路', value: 367 },
+  { label: '8 路', value: 493 },
+  { label: '16 路', value: 667 }
 ]
 
 const quickstart = [
@@ -542,6 +550,16 @@ read_only: true</code></pre>
           </li>
         </ul>
 
+        <div class="proof-chart" v-reveal>
+          <LineChart
+            :points="throughput"
+            unit=" exec/s"
+            :height="210"
+            :labels="false"
+            note="不同身份并行执行 true：2 路 67、4 路 367、8 路 493、16 路 667 exec/s。单次执行 p50 8.5 ms。"
+          />
+        </div>
+
         <p class="more" v-reveal>
           <a :href="withBase('/validation')">查看完整验证报告</a>
         </p>
@@ -797,6 +815,9 @@ read_only: true</code></pre>
   font-size: 21px;
   font-weight: 600;
   letter-spacing: -0.02em;
+}
+.proof-chart {
+  margin-top: 18px;
 }
 .more {
   margin: 18px 0 0;

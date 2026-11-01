@@ -167,6 +167,8 @@ RB_PORT=8099 python validation/rbtest.py perf
 
 ## 结论
 
-- 140 项攻击断言、0 项越权成功；隔离与命令文本无关，混淆和套娃不改变结果。
-- 单次执行 8.5 ms，16 路并发 667 exec/s，传输 66 MiB/s，足以支撑单机多租户的 Agent 工作负载。
-- 所有边界都以可复现脚本给出，脚本在仓库 `validation/` 下，可自行重跑。
+<div class="rb-band">
+  <p class="rb-band-title">140 项断言，0 次绕过。</p>
+  <p>隔离由内核的 UID 与路径解析保证，<strong>命令文本不参与鉴权</strong>——编码、拆分、套娃都不会改变结果。单次执行 p50 8.5 ms，16 路并发 667 exec/s，传输 66 MiB/s。</p>
+  <p>脚本在仓库 <code>validation/</code> 下，可对任何实例重跑；边界与限制同样写在报告里。</p>
+</div>
