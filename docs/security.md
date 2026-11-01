@@ -42,6 +42,11 @@ not replace the container runtime.
 | Root directories | `workspaces/` is `0711`, `state/` is `0700`, `runbox.db*` is `0600` | An identity can reach its own workspace by path but cannot list the other identities or read the identity table. |
 | UID recycling | `DELETE /v1/workspace` and retention expiry delete the identity row | The pool is not a lifetime quota on tenants. |
 | Reap before reuse | `killUIDProcesses` runs before a UID returns to the pool | A recycled UID cannot inherit daemons the previous identity left behind. |
+
+`workspaces/` must stay traversable for other UIDs (`--x`). With `0700` the
+sandbox UID cannot reach its own working directory and every `exec` fails with
+`500 start command: fork/exec /bin/sh: permission denied`; `0711` is the
+minimum that works. Do not "harden" it to `0700` on the host.
 | Minimal environment | `baseEnv` allowlist + explicit overrides | The runner's environment contains `RUNBOX_API_KEY`; commands must not inherit it. |
 | Process-group kill | `Setpgid` + `kill(-pid, SIGKILL)` | A timeout kills the shell and its children, not other identities' processes. |
 | Kill capability | `CAP_KILL` in the container | A root runner cannot signal a command running as UID 20000 without it. Without `CAP_KILL`, a timeout returns but leaves the command alive. |

@@ -275,6 +275,14 @@ does not impose filesystem quotas; both belong to the layer that owns the host.
 Changing `RUNBOX_UID_MIN`/`RUNBOX_UID_MAX` changes future assignments; existing
 files remain owned by the old UIDs and should be re-chowned or discarded.
 
+### Directory permissions
+
+Runbox creates `workspaces/` as `0711` and `state/` as `0700` on startup, and
+re-applies both on every restart. Do not tighten `workspaces/` to `0700`: the
+sandbox UID needs the traverse bit to reach its own working directory, and
+every `exec` would fail with `fork/exec /bin/sh: permission denied`. `0711`
+allows traversal without listing, which is the property you want.
+
 ## Backup
 
 The workspace is a cache. Back it up only if intermediate state matters.
