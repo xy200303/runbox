@@ -22,6 +22,23 @@ Runbox 的部署单位是一个容器加一个数据卷。下面这些是单机�
 
 备份两者即可。SQLite 在 WAL 模式，运行中直接拷主文件可能拿到不一致的快照——停容器，或用 SQLite 的备份接口复制。
 
+## 包管理器镜像
+
+沙箱命令的环境是重新构建的白名单，镜像 `ENV` 不会继承进去，所以 pip / npm 的镜像配置写在文件里：
+
+| 文件 | 默认值 | 读取方 |
+| --- | --- | --- |
+| `/etc/pip.conf` | `https://pypi.tuna.tsinghua.edu.cn/simple` | `pip` |
+| `/etc/npmrc` | `https://registry.npmmirror.com` | `npm` |
+
+清华镜像站没有 npm registry，所以 npm 默认用 npmmirror。想换源不必重建镜像：
+
+```bash
+docker run ...   -e RUNBOX_PIP_INDEX=https://pypi.org/simple   -e RUNBOX_NPM_REGISTRY=https://registry.npmjs.org
+```
+
+runner 会把这两个值注入每条命令的 `PIP_INDEX_URL` 与 `NPM_CONFIG_REGISTRY`，环境变量优先级高于配置文件。要改镜像默认值则用 `--build-arg PIP_MIRROR=... / NPM_MIRROR=...`。
+
 目录权限由 runboxd 在启动时设置并每次重启重新应用：`workspaces/` 是 `0711`（能穿过、不能列举），`state/` 是 `0700`，`runbox.db*` 是 `0600`。不要手动把 `workspaces/` 收紧成 `0700`——沙箱 UID 需要穿过这一层才能到达自己的工作目录，否则每次 `exec` 都会失败并返回 `fork/exec /bin/sh: permission denied`。
 
 ## 能力与安全姿态

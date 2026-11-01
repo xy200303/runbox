@@ -334,7 +334,7 @@ func TestCappedBuffer(t *testing.T) {
 func TestCommandEnvDoesNotLeakServerSecrets(t *testing.T) {
 	t.Setenv("RUNBOX_API_KEY", "super-secret")
 	t.Setenv("DATABASE_URL", "postgres://secret")
-	env := commandEnv(t.TempDir())
+	env := commandEnv(t.TempDir(), nil)
 	for _, entry := range env {
 		if strings.Contains(entry, "super-secret") || strings.Contains(entry, "postgres://secret") {
 			t.Fatalf("server secret leaked into command environment: %s", entry)
@@ -658,5 +658,22 @@ func TestOpenPathRejectsFIFOWithoutBlocking(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("OpenPath blocked on a FIFO")
+	}
+}
+
+func TestCommandEnvInjectsConfiguredMirrors(t *testing.T) {
+	env := commandEnv("/workspace/ws", []string{
+		"PIP_INDEX_URL=https://pypi.example/simple",
+		"NPM_CONFIG_REGISTRY=https://npm.example",
+	})
+	joined := strings.Join(env, "\n")
+	if !strings.Contains(joined, "PIP_INDEX_URL=https://pypi.example/simple") {
+		t.Fatalf("pip index missing from command env:\n%s", joined)
+	}
+	if !strings.Contains(joined, "NPM_CONFIG_REGISTRY=https://npm.example") {
+		t.Fatalf("npm registry missing from command env:\n%s", joined)
+	}
+	if strings.Contains(joined, "RUNBOX_API_KEY") {
+		t.Fatal("runner secrets must never reach commands")
 	}
 }

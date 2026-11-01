@@ -52,6 +52,28 @@ ghcr.io/xy200303/runbox:v0.2.3-toolbox
 
 Pin a version tag in production; do not rely on `latest`.
 
+### Package mirrors
+
+Commands run with a rebuilt environment, so image `ENV` never reaches pip or
+npm. The image therefore bakes the settings into files:
+
+| File | Default | Read by |
+| --- | --- | --- |
+| `/etc/pip.conf` | `https://pypi.tuna.tsinghua.edu.cn/simple` | `pip` |
+| `/etc/npmrc` | `https://registry.npmmirror.com` | `npm` |
+
+TUNA does not mirror the npm registry, so npm defaults to npmmirror. Override
+per deployment without rebuilding:
+
+```bash
+docker run ... -e RUNBOX_PIP_INDEX=https://pypi.org/simple                -e RUNBOX_NPM_REGISTRY=https://registry.npmjs.org
+```
+
+The runner injects those two values into every command as `PIP_INDEX_URL` and
+`NPM_CONFIG_REGISTRY`; environment variables take precedence over the config
+files. To change the image default instead, rebuild with
+`--build-arg PIP_MIRROR=... / NPM_MIRROR=...`.
+
 ### Restricted networks
 
 All build stages accept mirrors:
@@ -62,8 +84,13 @@ docker build \
   --build-arg APT_MIRROR=mirrors.aliyun.com \
   --build-arg PIP_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple \
   --build-arg NPM_REGISTRY=https://registry.npmmirror.com \
+  --build-arg PIP_MIRROR=https://pypi.tuna.tsinghua.edu.cn/simple \
+  --build-arg NPM_MIRROR=https://registry.npmmirror.com \
   -t runbox:latest .
 ```
+
+`PIP_INDEX` / `NPM_REGISTRY` configure build-time installs; `PIP_MIRROR` /
+`NPM_MIRROR` configure what sandbox commands use at run time.
 
 For Docker Hub rate limits, configure a registry mirror in
 `/etc/docker/daemon.json`, for example:

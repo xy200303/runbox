@@ -55,6 +55,8 @@ func main() {
 		MaxConcurrency:           cfg.MaxConcurrency,
 		UIDMin:                   cfg.UIDMin,
 		UIDMax:                   cfg.UIDMax,
+		PipIndex:                 cfg.PipIndex,
+		NpmRegistry:              cfg.NpmRegistry,
 		MaxUploadBytes:           cfg.MaxUploadBytes,
 		MaxCommandBytes:          cfg.MaxCommandBytes,
 		MaxStdoutBytes:           cfg.MaxStdoutBytes,

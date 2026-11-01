@@ -35,6 +35,8 @@ type Config struct {
 	MaxConcurrency           int
 	UIDMin                   int
 	UIDMax                   int
+	PipIndex                 string
+	NpmRegistry              string
 	DefaultTimeout           time.Duration
 	MaxTimeout               time.Duration
 	ShutdownTimeout          time.Duration
@@ -69,6 +71,8 @@ func FromEnv(get func(string) string) (Config, error) {
 		MaxConcurrency:  2,
 		UIDMin:          20000,
 		UIDMax:          62000,
+		PipIndex:        "",
+		NpmRegistry:     "",
 		DefaultTimeout:  sandbox.DefaultTimeout,
 		MaxTimeout:      sandbox.DefaultMaxTimeout,
 		ShutdownTimeout: 30 * time.Second,
@@ -151,6 +155,16 @@ func FromEnv(get func(string) string) (Config, error) {
 	if value := get("RUNBOX_MAX_CONCURRENCY"); value != "" {
 		if cfg.MaxConcurrency, err = parseInt(value); err != nil {
 			return Config{}, fmt.Errorf("RUNBOX_MAX_CONCURRENCY: %w", err)
+		}
+	}
+	if value := get("RUNBOX_PIP_INDEX"); value != "" {
+		if cfg.PipIndex = strings.TrimSpace(value); cfg.PipIndex != "" && !strings.HasPrefix(cfg.PipIndex, "http") {
+			return Config{}, fmt.Errorf("RUNBOX_PIP_INDEX must be an http(s) URL")
+		}
+	}
+	if value := get("RUNBOX_NPM_REGISTRY"); value != "" {
+		if cfg.NpmRegistry = strings.TrimSpace(value); cfg.NpmRegistry != "" && !strings.HasPrefix(cfg.NpmRegistry, "http") {
+			return Config{}, fmt.Errorf("RUNBOX_NPM_REGISTRY must be an http(s) URL")
 		}
 	}
 	if value := get("RUNBOX_UID_MIN"); value != "" {

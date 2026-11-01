@@ -576,6 +576,8 @@ Durations accept `30s`, `15m`, `7d` or bare seconds; sizes accept `20MiB`, `20MB
 | `RUNBOX_RETENTION` | `7d` | Idle workspace retention. |
 | `RUNBOX_SWEEP_INTERVAL` | `1h` | Janitor interval. |
 | `RUNBOX_UID_MIN` / `RUNBOX_UID_MAX` | `20000` / `62000` | UID pool used for Linux isolation; a UID returns to the pool when its workspace is deleted or expires. |
+| `RUNBOX_PIP_INDEX` | image default | Injected into every command as `PIP_INDEX_URL`; the image ships the Tsinghua PyPI mirror. |
+| `RUNBOX_NPM_REGISTRY` | image default | Injected into every command as `NPM_CONFIG_REGISTRY`; the image ships `registry.npmmirror.com`. |
 | `RUNBOX_DEFAULT_TIMEOUT` | `60s` | Timeout when the request omits one. |
 | `RUNBOX_MAX_TIMEOUT` | `300s` | Upper bound; longer requests are clamped. |
 | `RUNBOX_SHUTDOWN_TIMEOUT` | `30s` | Graceful shutdown budget. |
@@ -602,7 +604,13 @@ times that on disk (`docker images` reports about 700 MB for `minimal`). `full`
 now includes everything in `toolbox`, so pick `minimal` for code/text workloads
 and `toolbox` only when you want the compiler without the Office layer.
 
-Build arguments for restricted networks: `GOPROXY`, `APT_MIRROR`, `PIP_INDEX`, `NPM_REGISTRY`. See [docs/deployment.md](docs/deployment.md).
+Commands default to the Tsinghua PyPI mirror and npmmirror for npm: those
+settings are baked into `/etc/pip.conf` and `/etc/npmrc`, because the command
+environment is rebuilt from an allowlist and does not inherit image `ENV`.
+Override them with `RUNBOX_PIP_INDEX` / `RUNBOX_NPM_REGISTRY` at run time, or
+rebuild with `--build-arg PIP_MIRROR=... / NPM_MIRROR=...`. Build-stage mirrors
+(`GOPROXY`, `APT_MIRROR`, `PIP_INDEX`, `NPM_REGISTRY`) still apply to the image
+build itself. See [docs/deployment.md](docs/deployment.md).
 
 ## Comparison
 

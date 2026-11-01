@@ -5,11 +5,12 @@ services:
       target: full
       args:
         VERSION: ${VERSION:-dev}
-        # For users behind the GFW, override these:
+        # Build-time mirrors (runtime commands already default to the
+        # Tsinghua PyPI mirror and npmmirror for npm):
         # GOPROXY: https://goproxy.cn,direct
         # APT_MIRROR: mirrors.aliyun.com
-        # PIP_INDEX: https://pypi.tuna.tsinghua.edu.cn/simple
-        # NPM_REGISTRY: https://registry.npmmirror.com
+        # PIP_MIRROR: https://pypi.tuna.tsinghua.edu.cn/simple
+        # NPM_MIRROR: https://registry.npmmirror.com
     image: runbox:dev
     container_name: runbox
     environment:

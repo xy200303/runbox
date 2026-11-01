@@ -78,6 +78,7 @@ func (r *Runner) Exec(ctx context.Context, identity sandbox.Identity, command st
 		command:   command,
 		timeout:   timeout,
 		maxStdout: r.opts.MaxStdoutBytes,
+		env:       r.mirrorEnv(),
 	})
 	if runErr != nil {
 		return nil, runErr
@@ -130,6 +131,7 @@ type runSpec struct {
 	command   string
 	timeout   time.Duration
 	maxStdout int
+	env       []string
 }
 
 type runOutcome struct {
@@ -142,7 +144,7 @@ type runOutcome struct {
 func runCommand(ctx context.Context, spec runSpec) (*runOutcome, *sandbox.Error) {
 	stdout := newCappedBuffer(spec.maxStdout)
 	stderr := newCappedBuffer(spec.maxStdout)
-	cmd := commandFor(spec.uid, spec.drop, spec.dir, spec.command)
+	cmd := commandFor(spec.uid, spec.drop, spec.dir, spec.command, spec.env)
 	// If a daemonized grandchild keeps the output pipe open after the process
 	// group is killed, Stop waiting and let Wait return.
 	cmd.WaitDelay = 5 * time.Second
@@ -207,9 +209,23 @@ func waitForExit(done <-chan error) {
 	}
 }
 
+// mirrorEnv lists the package-manager settings an operator configured through
+// RUNBOX_PIP_INDEX / RUNBOX_NPM_REGISTRY. They are injected because the command
+// environment is rebuilt from scratch and image ENV is not inherited.
+func (r *Runner) mirrorEnv() []string {
+	env := make([]string, 0, 2)
+	if r.opts.PipIndex != "" {
+		env = append(env, "PIP_INDEX_URL="+r.opts.PipIndex)
+	}
+	if r.opts.NpmRegistry != "" {
+		env = append(env, "NPM_CONFIG_REGISTRY="+r.opts.NpmRegistry)
+	}
+	return env
+}
+
 // commandEnv builds a deliberately small environment. The runner's own
 // environment contains the API key and must never be visible to commands.
-func commandEnv(dir string) []string {
+func commandEnv(dir string, extra []string) []string {
 	values := map[string]string{}
 	for _, entry := range baseEnv(dir) {
 		if key, value, ok := strings.Cut(entry, "="); ok {
@@ -245,6 +261,11 @@ func commandEnv(dir string) []string {
 	values["TMPDIR"] = tempDir
 	values["TEMP"] = tempDir
 	values["TMP"] = tempDir
+	for _, entry := range extra {
+		if key, value, ok := strings.Cut(entry, "="); ok && key != "" {
+			values[key] = value
+		}
+	}
 
 	keys := make([]string, 0, len(values))
 	for key := range values {

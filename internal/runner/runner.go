@@ -43,7 +43,11 @@ type Options struct {
 	Retention       time.Duration
 	DefaultTimeout  time.Duration
 	MaxTimeout      time.Duration
-	Logger          *slog.Logger
+	// PipIndex and NpmRegistry are injected into every command environment so
+	// package installs use a reachable mirror. Empty leaves the image defaults.
+	PipIndex    string
+	NpmRegistry string
+	Logger      *slog.Logger
 	// AllowMissingCapabilities lets a root runner start without the Linux
 	// capabilities it needs. Development only; production should fail closed.
 	AllowMissingCapabilities bool

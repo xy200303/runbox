@@ -51,7 +51,7 @@ func baseEnv(_ string) []string {
 	return env
 }
 
-func commandFor(_ int, _ bool, dir, command string) *exec.Cmd {
+func commandFor(_ int, _ bool, dir, command string, extraEnv []string) *exec.Cmd {
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
 		cmd = exec.Command("cmd", "/C", command)
@@ -59,7 +59,7 @@ func commandFor(_ int, _ bool, dir, command string) *exec.Cmd {
 		cmd = exec.Command("/bin/sh", "-c", command)
 	}
 	cmd.Dir = dir
-	cmd.Env = commandEnv(dir)
+	cmd.Env = commandEnv(dir, extraEnv)
 	return cmd
 }
 

@@ -36,10 +36,10 @@ func baseEnv(_ string) []string {
 	}
 }
 
-func commandFor(uid int, drop bool, dir, command string) *exec.Cmd {
+func commandFor(uid int, drop bool, dir, command string, extraEnv []string) *exec.Cmd {
 	cmd := exec.Command("/bin/sh", "-c", command)
 	cmd.Dir = dir
-	cmd.Env = commandEnv(dir)
+	cmd.Env = commandEnv(dir, extraEnv)
 	// A dedicated process group lets us kill the whole tree on timeout
 	// without touching another identity's processes.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

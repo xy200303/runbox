@@ -78,6 +78,8 @@ func TestOverrides(t *testing.T) {
 		"RUNBOX_UID_MAX":            "1100",
 		"RUNBOX_LOG_FORMAT":         "json",
 		"RUNBOX_ALLOW_MISSING_CAPS": "1",
+		"RUNBOX_PIP_INDEX":          "https://pypi.example/simple",
+		"RUNBOX_NPM_REGISTRY":       "https://npm.example",
 	}))
 	if err != nil {
 		t.Fatalf("load overrides: %v", err)
@@ -97,12 +99,18 @@ func TestOverrides(t *testing.T) {
 	if !cfg.AllowMissingCapabilities {
 		t.Fatal("RUNBOX_ALLOW_MISSING_CAPS was not applied")
 	}
+	if cfg.PipIndex != "https://pypi.example/simple" || cfg.NpmRegistry != "https://npm.example" {
+		t.Fatalf("unexpected package mirrors: %+v", cfg)
+	}
 }
 
 func TestInvalidCombinations(t *testing.T) {
 	cases := map[string]map[string]string{
 		"small timeout": {
 			"RUNBOX_API_KEY": "k", "RUNBOX_DEFAULT_TIMEOUT": "10m", "RUNBOX_MAX_TIMEOUT": "1m",
+		},
+		"bad pip mirror": {
+			"RUNBOX_API_KEY": "k", "RUNBOX_PIP_INDEX": "pypi.example",
 		},
 		"bad uid range": {
 			"RUNBOX_API_KEY": "k", "RUNBOX_UID_MIN": "200", "RUNBOX_UID_MAX": "100",

@@ -4,6 +4,15 @@
 
 Security and operability fixes found by an adversarial test pass.
 
+- New [`validation/`](validation/) harnesses publish 140 adversarial checks
+  (security, deep attacks, obfuscation and nested scripts) plus a performance
+  bench; results are rendered at <https://runbox.xyun.dev/validation> and in
+  [docs/validation.md](docs/validation.md).
+- Sandbox commands default to the Tsinghua PyPI mirror and npmmirror for npm.
+  The image bakes `/etc/pip.conf` and `/etc/npmrc` because the command
+  environment is rebuilt from an allowlist and does not inherit image `ENV`.
+  `RUNBOX_PIP_INDEX` / `RUNBOX_NPM_REGISTRY` override them per deployment;
+  `PIP_MIRROR` / `NPM_MIRROR` build args change the image default.
 - The UID pool now defaults to `20000..62000` (was `20000..20100`) and a UID is
   released when its workspace is deleted or expires. Before this, the 101st
   distinct identity failed with `uid_exhausted` forever, because neither

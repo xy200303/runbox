@@ -1,3 +1,9 @@
+# Package mirrors: commands run with a rebuilt environment, so the image bakes
+# pip/npm settings into /etc instead of relying on ENV. Override at build time
+# with --build-arg PIP_MIRROR=.../NPM_MIRROR=..., or per deployment with
+# RUNBOX_PIP_INDEX / RUNBOX_NPM_REGISTRY (the runner injects those into every
+# command).
+#
 # Runtime images, in increasing size:
 #   minimal  Debian 12 slim + agent CLI toolbox + Python/Node (no LibreOffice)
 #   toolbox  minimal + build-essential and development headers
@@ -55,6 +61,16 @@ RUN if [ "${APT_MIRROR}" != "deb.debian.org" ]; then \
  && ln -s /usr/bin/fdfind /usr/local/bin/fd \
  && ln -s /usr/bin/batcat /usr/local/bin/bat \
  && rm -rf /var/lib/apt/lists/*
+
+# Default package mirrors. Tsinghua mirrors PyPI; TUNA does not mirror the npm
+# registry, so npm uses npmmirror.com. Both files are read by the toolchains
+# themselves, so the command environment allowlist does not affect them.
+ARG PIP_MIRROR=https://pypi.tuna.tsinghua.edu.cn/simple
+ARG NPM_MIRROR=https://registry.npmmirror.com
+RUN printf '[global]\nindex-url = %s\ndisable-pip-version-check = true\n' "${PIP_MIRROR}" > /etc/pip.conf \
+ && printf 'registry=%s\nfund=false\naudit=false\n' "${NPM_MIRROR}" > /etc/npmrc \
+ && cat /etc/pip.conf /etc/npmrc
+
 COPY --from=build /out/runboxd /usr/local/bin/runboxd
 RUN mkdir -p /workspace
 WORKDIR /workspace
