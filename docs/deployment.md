@@ -45,9 +45,9 @@ Prebuilt multi-arch images are published by the `docker` workflow:
 ```text
 xy200303/runbox:latest
 xy200303/runbox:latest-minimal
-xy200303/runbox:v0.2.4
-xy200303/runbox:v0.2.4-minimal
-xy200303/runbox:v0.2.4-toolbox
+xy200303/runbox:v0.2.5
+xy200303/runbox:v0.2.5-minimal
+xy200303/runbox:v0.2.5-toolbox
 ```
 
 Pin a version tag in production; do not rely on `latest`.

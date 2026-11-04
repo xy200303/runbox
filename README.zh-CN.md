@@ -17,7 +17,7 @@
 
 <p align="center">
   <a href="https://github.com/xy200303/runbox/actions/workflows/ci.yml"><img src="https://github.com/xy200303/runbox/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI 状态"></a>
-  <img src="https://img.shields.io/badge/version-0.2.3-2563EB?style=for-the-badge" alt="版本 0.2.3">
+  <img src="https://img.shields.io/badge/version-0.2.5-2563EB?style=for-the-badge" alt="版本 0.2.5">
   <img src="https://img.shields.io/badge/Go-1.26-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go 1.26">
   <img src="https://img.shields.io/badge/license-MIT-16A34A?style=for-the-badge" alt="MIT 许可证">
   <img src="https://img.shields.io/badge/docker-ready-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker">
@@ -97,7 +97,7 @@ Runbox 采用 **dify-sandbox 的形态**：一个长期运行的容器，承载�
 | `minimal` | `docker pull xy200303/runbox:latest-minimal` | 约 585MB | 代码、文本、PDF 提取 |
 | `toolbox` | `docker pull xy200303/runbox:latest-toolbox` | minimal + 约 300MB | 需要编译原生扩展的包 |
 
-版本 tag 跟随 release，例如 `v0.2.3`、`v0.2.3-minimal`、`v0.2.3-toolbox`。
+版本 tag 跟随 release，例如 `v0.2.5`、`v0.2.5-minimal`、`v0.2.5-toolbox`。
 
 三个变体用同一条命令启动，只换镜像 tag：
 

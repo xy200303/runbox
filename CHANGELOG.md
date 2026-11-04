@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.5 — 2026-11-05
 
 - Images are published to Docker Hub (`xy200303/runbox`) instead of GHCR, so
   pull commands no longer carry a registry host and anonymous pulls no longer

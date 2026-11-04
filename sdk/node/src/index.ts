@@ -127,7 +127,7 @@ export class Client {
   private headers(identity?: Identity, extra?: Record<string, string>): Headers {
     const headers = new Headers({
       Accept: 'application/json',
-      'User-Agent': 'runbox-node/0.2.4',
+      'User-Agent': 'runbox-node/0.2.5',
     })
     for (const [key, value] of Object.entries(identityHeaders(identity ?? this.identity))) {
       headers.set(key, value)

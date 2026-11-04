@@ -71,7 +71,7 @@ No authentication. Suitable for container probes.
 ```json
 {
   "status": "healthy",
-  "version": "0.2.3",
+  "version": "0.2.5",
   "uptime_seconds": 42
 }
 ```
@@ -113,7 +113,7 @@ and paths never become labels.
 
 ```json
 {
-  "version": "0.2.3",
+  "version": "0.2.5",
   "os": "linux",
   "arch": "amd64",
   "limits": {
