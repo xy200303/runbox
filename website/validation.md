@@ -30,7 +30,7 @@ Runbox 的隔离是内核属性：执行前切到该身份的 UID，路径解析
 ```bash
 docker run -d --name rb -p 8099:8099 \
   -e RUNBOX_API_KEY=test-key-123 -e RUNBOX_UID_MAX=40000 \
-  -v rb-data:/workspace ghcr.io/xy200303/runbox:latest
+  -v rb-data:/workspace xy200303/runbox:latest
 
 RB_PORT=8099 RB_KEY=test-key-123 python validation/rbtest.py security
 RB_PORT=8099 RB_CONTAINER=rb python validation/deep.py

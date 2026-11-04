@@ -65,7 +65,7 @@ const quickstart = [
   -p 8099:8099 \\
   -e RUNBOX_API_KEY=$(openssl rand -hex 32) \\
   -v runbox-data:/workspace \\
-  ghcr.io/xy200303/runbox:latest`,
+  xy200303/runbox:latest`,
     note: '换 :latest-minimal 跑纯代码与文本任务，换 :latest-toolbox 让 pip/npm 能编译原生扩展。'
   },
   {
@@ -250,7 +250,7 @@ const faqs = [
     -p 8099:8099 \
     -e RUNBOX_API_KEY=$RUNBOX_API_KEY \
     -v runbox-data:/workspace \
-    ghcr.io/xy200303/runbox:latest
+    xy200303/runbox:latest
 
 <span class="p">$</span> curl -fsS localhost:8099/v1/exec \
     -H <span class="s">"Authorization: Bearer $RUNBOX_API_KEY"</span> \
@@ -471,7 +471,7 @@ const faqs = [
   -p 8099:8099 \
   -e RUNBOX_API_KEY=$RUNBOX_API_KEY \
   -v runbox-data:/workspace \
-  ghcr.io/xy200303/runbox:latest</code></pre>
+  xy200303/runbox:latest</code></pre>
           </article>
 
           <article class="panel" v-reveal="60">
@@ -500,7 +500,7 @@ read_only: true</code></pre>
             </thead>
             <tbody>
               <tr v-for="img in images" :key="img.tag">
-                <td><code>ghcr.io/xy200303/runbox:{{ img.tag }}</code></td>
+                <td><code>xy200303/runbox:{{ img.tag }}</code></td>
                 <td class="tnum">{{ img.size }}</td>
                 <td>{{ img.use }}</td>
               </tr>

@@ -95,9 +95,9 @@ can assign per-identity UIDs:
 
 | Variant | Pull | Download | Use |
 |---|---|---|---|
-| `full` | `docker pull ghcr.io/xy200303/runbox:latest` | ~600 MB | Office documents, spreadsheets, pandas/numpy, native builds |
-| `minimal` | `docker pull ghcr.io/xy200303/runbox:latest-minimal` | ~170 MB | Code, text, PDF extraction |
-| `toolbox` | `docker pull ghcr.io/xy200303/runbox:latest-toolbox` | ~285 MB | Compiling without the Office layer |
+| `full` | `docker pull xy200303/runbox:latest` | ~600 MB | Office documents, spreadsheets, pandas/numpy, native builds |
+| `minimal` | `docker pull xy200303/runbox:latest-minimal` | ~170 MB | Code, text, PDF extraction |
+| `toolbox` | `docker pull xy200303/runbox:latest-toolbox` | ~285 MB | Compiling without the Office layer |
 
 Versioned tags follow the release, for example `v0.2.4`, `v0.2.4-minimal` and
 `v0.2.4-toolbox`.
@@ -116,7 +116,7 @@ docker run -d --name runbox \
   -p 8099:8099 \
   -e RUNBOX_API_KEY="$RUNBOX_API_KEY" \
   -v runbox-data:/workspace \
-  ghcr.io/xy200303/runbox:latest
+  xy200303/runbox:latest
 ```
 
 Use `:latest-minimal` for code/text workloads and `:latest-toolbox` when pip or

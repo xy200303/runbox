@@ -93,9 +93,9 @@ Runbox 采用 **dify-sandbox 的形态**：一个长期运行的容器，承载�
 
 | 变体 | 拉取 | 解包后体积 | 适用 |
 |---|---|---|---|
-| `full` | `docker pull ghcr.io/xy200303/runbox:latest` | 约 1.4GB | Office 文档、表格、pandas/numpy |
-| `minimal` | `docker pull ghcr.io/xy200303/runbox:latest-minimal` | 约 585MB | 代码、文本、PDF 提取 |
-| `toolbox` | `docker pull ghcr.io/xy200303/runbox:latest-toolbox` | minimal + 约 300MB | 需要编译原生扩展的包 |
+| `full` | `docker pull xy200303/runbox:latest` | 约 1.4GB | Office 文档、表格、pandas/numpy |
+| `minimal` | `docker pull xy200303/runbox:latest-minimal` | 约 585MB | 代码、文本、PDF 提取 |
+| `toolbox` | `docker pull xy200303/runbox:latest-toolbox` | minimal + 约 300MB | 需要编译原生扩展的包 |
 
 版本 tag 跟随 release，例如 `v0.2.3`、`v0.2.3-minimal`、`v0.2.3-toolbox`。
 
@@ -113,7 +113,7 @@ docker run -d --name runbox \
   -p 8099:8099 \
   -e RUNBOX_API_KEY="$RUNBOX_API_KEY" \
   -v runbox-data:/workspace \
-  ghcr.io/xy200303/runbox:latest
+  xy200303/runbox:latest
 ```
 
 代码/文本任务用 `:latest-minimal`，需要编译原生扩展时用 `:latest-toolbox`。

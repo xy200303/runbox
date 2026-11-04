@@ -22,7 +22,7 @@ docker run -d --name runbox \
   -p 8099:8099 \
   -e RUNBOX_API_KEY="$RUNBOX_API_KEY" \
   -v runbox-data:/workspace \
-  ghcr.io/xy200303/runbox:latest
+  xy200303/runbox:latest
 ```
 
 ```bash

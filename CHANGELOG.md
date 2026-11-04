@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Images are published to Docker Hub (`xy200303/runbox`) instead of GHCR, so
+  pull commands no longer carry a registry host and anonymous pulls no longer
+  depend on GitHub Packages visibility. CI reads `DOCKERHUB_USERNAME` and
+  `DOCKERHUB_TOKEN` repository secrets; the existing tag layout (`latest`,
+  `latest-minimal`, `latest-toolbox`, `vX.Y.Z*`) is unchanged.
+
 ## 0.2.4 — 2026-11-01
 
 Security and operability fixes found by an adversarial test pass.
@@ -136,4 +144,4 @@ Initial extraction from the property-management platform's sandbox module.
   Go/Python/curl examples and CI.
 - Go, Python and Node SDKs under `sdk/`.
 - Static product website under `website/`, deployed to `runbox.xyun.dev`.
-- GitHub Actions for CI, multi-arch GHCR images, SDK releases and Pages.
+- GitHub Actions for CI, multi-arch container images, SDK releases and Pages.

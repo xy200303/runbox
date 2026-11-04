@@ -56,9 +56,11 @@ body explaining the why when the change is not obvious.
 
 1. Update `CHANGELOG.md`.
 2. Tag the release (`vX.Y.Z`) and push the tag.
-3. `docker.yml` publishes multi-arch images to GHCR, `release.yml` creates the
-   GitHub release, and the Python/npm jobs publish when `PYPI_API_TOKEN` and
-   `NPM_TOKEN` are configured.
+3. `docker.yml` publishes multi-arch images to Docker Hub, `release.yml`
+   creates the GitHub release, and the Python/npm jobs publish when
+   `PYPI_API_TOKEN` and `NPM_TOKEN` are configured. Docker Hub publishing needs
+   `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` repository secrets; the token is a
+   Docker Hub access token with read/write scope.
 4. The website deploys from `main` through `pages.yml`.
 5. To publish the Python/npm packages independently, add `PYPI_API_TOKEN` and
    `NPM_TOKEN` repository secrets and run the `sdk-publish` workflow.
